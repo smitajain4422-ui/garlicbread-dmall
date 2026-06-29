@@ -3,201 +3,453 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nosify Engine</title>
+    <title>Multi Bot DMall by Nosify</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.2/jquery.min.js"></script>
-    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js"></script>
+    
+    <style>
+        /* --- MODERN UI VARIABLES --- */
+        :root {
+            --site-bg: #09090b;
+            --site-panel: rgba(24, 24, 27, 0.65);
+            --site-border: rgba(255, 255, 255, 0.1);
+            --site-text: #f4f4f5;
+            --site-text-muted: #a1a1aa;
+            --site-input: rgba(0, 0, 0, 0.4);
+            --accent: #6366f1;
+            --accent-hover: #4f46e5;
+            --accent-glow: rgba(99, 102, 241, 0.4);
+        }
+
+        body.light-site {
+            --site-bg: #f4f4f5;
+            --site-panel: rgba(255, 255, 255, 0.7);
+            --site-border: rgba(0, 0, 0, 0.1);
+            --site-text: #09090b;
+            --site-text-muted: #52525b;
+            --site-input: rgba(255, 255, 255, 0.9);
+            --accent: #4f46e5;
+            --accent-hover: #4338ca;
+            --accent-glow: rgba(79, 70, 229, 0.3);
+        }
+
+        body { 
+            margin: 0; padding: 0; font-family: 'Inter', sans-serif; 
+            background-color: var(--site-bg); color: var(--site-text); overflow: hidden;
+            display: flex; justify-content: center; align-items: center; height: 100vh;
+            transition: background-color 0.4s ease;
+        }
+
+        /* --- ADVANCED ANIMATED BACKGROUND --- */
+        .bg-orbs {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            z-index: -2; overflow: hidden; filter: blur(80px); opacity: 0.6;
+        }
+        .orb { position: absolute; border-radius: 50%; animation: float 15s infinite ease-in-out alternate; }
+        .orb-1 { width: 400px; height: 400px; background: #4f46e5; top: -10%; left: -10%; animation-delay: 0s; }
+        .orb-2 { width: 500px; height: 500px; background: #ec4899; bottom: -20%; right: -10%; animation-delay: -5s; }
+        .orb-3 { width: 300px; height: 300px; background: #8b5cf6; top: 40%; left: 40%; animation-delay: -10s; }
+        
+        @keyframes float {
+            0% { transform: translate(0, 0) scale(1); }
+            50% { transform: translate(50px, 30px) scale(1.1); }
+            100% { transform: translate(-30px, 50px) scale(0.9); }
+        }
+
+        body.light-site .bg-orbs { opacity: 0.3; }
+
+        /* --- CORE LAYOUT & GLASSMORPHISM --- */
+        #mobile-blocker { display: none; }
+        @media (max-width: 768px) {
+            #mobile-blocker { display: flex !important; }
+            #app-workspace, #admin-dashboard, #gatekeeper-modal { display: none !important; }
+        }
+
+        .panel {
+            background: var(--site-panel); border: 1px solid var(--site-border); border-radius: 20px;
+            width: 95%; max-width: 1300px; height: 90vh; max-height: 900px;
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); display: flex; overflow: hidden;
+            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+        }
+
+        .content-area { flex: 1; overflow-y: auto; position: relative; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-thumb { background: var(--site-border); border-radius: 10px; }
+
+        .tab-content { display: none; padding: 32px; animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1); height: 100%; overflow-y: auto; }
+        .tab-content.active { display: block; }
+        
+        @keyframes slideUp { 
+            from { opacity: 0; transform: translateY(20px); } 
+            to { opacity: 1; transform: translateY(0); } 
+        }
+
+        /* --- MODERN INPUTS & BUTTONS --- */
+        .btn-blue { 
+            background: var(--accent); color: #fff; padding: 12px 20px; border-radius: 10px; 
+            font-size: 13px; font-weight: 700; border: none; cursor: pointer; transition: all 0.2s; 
+            box-shadow: 0 4px 14px 0 var(--accent-glow);
+        }
+        .btn-blue:hover { background: var(--accent-hover); transform: translateY(-1px); box-shadow: 0 6px 20px 0 var(--accent-glow); }
+        .btn-blue:active { transform: translateY(1px); }
+
+        .btn-dark { 
+            background: var(--site-input); color: var(--site-text); border: 1px solid var(--site-border); 
+            padding: 12px 20px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; 
+        }
+        .btn-dark:hover { border-color: var(--accent); background: rgba(255,255,255,0.05); }
+
+        .btn-red { 
+            background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); 
+            padding: 8px 16px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s; 
+        }
+        .btn-red:hover { background: rgba(239, 68, 68, 0.2); box-shadow: 0 4px 14px 0 rgba(239, 68, 68, 0.2); }
+
+        .input-box { 
+            background: var(--site-input); border: 1px solid var(--site-border); color: var(--site-text); 
+            padding: 12px 16px; border-radius: 10px; width: 100%; font-size: 13px; outline: none; transition: border-color 0.2s; 
+        }
+        .input-box:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+
+        /* --- NAVIGATION --- */
+        .bottom-nav { 
+            display: flex; flex-direction: column; width: 100px; border-right: 1px solid var(--site-border); 
+            padding: 24px 0; gap: 20px; height: 100%; background: rgba(0,0,0,0.2); overflow-y: auto;
+        }
+        .nav-item { 
+            display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--site-text-muted); 
+            font-size: 11px; font-weight: 700; cursor: pointer; transition: all 0.2s; text-transform: uppercase; position: relative;
+        }
+        .nav-item::before {
+            content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+            width: 3px; height: 0; background: var(--accent); border-radius: 0 4px 4px 0; transition: height 0.2s;
+        }
+        .nav-item.active { color: var(--text); }
+        .nav-item.active::before { height: 100%; }
+        .nav-icon { font-size: 22px; transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); filter: grayscale(100%); opacity: 0.6; }
+        .nav-item.active .nav-icon { transform: scale(1.15) translateY(-2px); filter: grayscale(0%); opacity: 1; }
+
+        /* --- ANIMATED PROGRESS BAR & CONSOLE --- */
+        .progress-bg { 
+            background: var(--site-input); border: 1px solid var(--site-border); border-radius: 10px; 
+            height: 28px; width: 100%; overflow: hidden; position: relative; box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
+        }
+        .progress-fill { 
+            background: linear-gradient(90deg, var(--accent), #ec4899, var(--accent)); 
+            background-size: 200% 100%;
+            height: 100%; width: 0%; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            animation: gradientMove 2s linear infinite;
+        }
+        @keyframes gradientMove { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+        
+        .console-log { 
+            background: rgba(0, 0, 0, 0.7); color: #e5e7eb; font-family: 'JetBrains Mono', monospace; 
+            font-size: 12px; padding: 20px; border-radius: 12px; height: 350px; overflow-y: auto; 
+            border: 1px solid var(--site-border); line-height: 1.6;
+        }
+        
+        /* --- GLOBAL CHAT --- */
+        .chat-container { display: flex; flex-direction: column; height: 650px; background: rgba(0,0,0,0.2); border: 1px solid var(--site-border); border-radius: 16px; }
+        .chat-messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+        .chat-msg { display: flex; gap: 14px; animation: slideUp 0.2s ease-out; }
+        .chat-msg img { width: 40px; height: 40px; border-radius: 12px; object-fit: cover; }
+        .chat-input-area { padding: 16px; border-top: 1px solid var(--site-border); display: flex; gap: 10px; background: rgba(0,0,0,0.3); border-radius: 0 0 16px 16px; }
+        
+        /* --- WIDGET CARDS --- */
+        .glass-card {
+            background: var(--site-panel); border: 1px solid var(--site-border); border-radius: 16px; padding: 24px;
+            box-shadow: 0 10px 30px -10px rgba(0,0,0,0.3); transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .glass-card:hover { transform: translateY(-2px); box-shadow: 0 15px 35px -10px rgba(0,0,0,0.4); }
+        .gradient-text { background: linear-gradient(to right, #818cf8, #ec4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+
+        .watermark { font-size: 10px; font-weight: 800; letter-spacing: 0.15em; color: var(--site-text-muted); text-align: center; padding: 10px 0; opacity: 0.5; position: fixed; bottom: 10px; width: 100%; pointer-events: none; }
+    </style>
 </head>
 <body>
-    <div class="animated-bg"></div>
-
-    <div id="mobile-blocker" class="fixed inset-0 bg-[#050505] z-[9999] flex-col items-center justify-center p-6 text-center">
-        <span class="text-5xl mb-4">🖥️</span><h1 class="text-xl font-bold text-white mb-2">PC Required</h1>
+    <div class="bg-orbs">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
     </div>
 
-    <div id="gatekeeper-modal" class="fixed inset-0 bg-black/90 backdrop-blur-sm z-[999] flex items-center justify-center p-4">
-        <div class="bg-[var(--site-panel)] border border-[var(--site-border)] w-full max-w-md p-8 rounded-2xl shadow-2xl text-center">
-            <h2 class="text-xl font-bold text-[var(--site-text)] mb-2">Nosify Engine</h2>
-            <p class="text-xs text-[var(--site-text-muted)] mb-6">Enter access key.</p>
-            <input type="password" id="access-gate-key" class="input-box text-center mb-4" placeholder="Enter Key...">
-            <button onclick="loginSystem()" class="w-full btn-blue py-3 font-bold" id="login-btn">Login</button>
+    <div id="mobile-blocker" class="fixed inset-0 bg-[#09090b] z-[9999] flex-col items-center justify-center p-6 text-center">
+        <span class="text-5xl mb-4">🖥️</span><h1 class="text-2xl font-bold text-white mb-2">PC Required</h1>
+        <p class="text-gray-400">Please switch to a computer or enable Desktop Mode in your browser to use the tool properly.</p>
+    </div>
+
+    <!-- LOGIN -->
+    <div id="gatekeeper-modal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-[999] flex items-center justify-center p-4">
+        <div class="glass-card w-full max-w-md text-center relative overflow-hidden">
+            <h2 class="text-2xl font-bold text-[var(--site-text)] mb-2">Multi Bot DMall</h2>
+            <p class="text-sm text-[var(--site-text-muted)] mb-8">Developed by Nosify</p>
+            <input type="password" id="access-gate-key" class="input-box text-center mb-6" placeholder="Enter Access Key...">
+            <button onclick="loginSystem()" class="w-full btn-blue py-3 font-bold text-base" id="login-btn">Log In</button>
         </div>
     </div>
 
+    <!-- ADMIN PANEL -->
     <div id="admin-dashboard" class="hidden fixed inset-0 bg-[var(--site-bg)] z-[900] overflow-y-auto p-4 md:p-10 text-[var(--site-text)]">
         <div class="max-w-6xl mx-auto space-y-6">
-            <div class="flex justify-between items-center bg-[var(--site-panel)] p-6 rounded-xl border border-[var(--site-border)]">
-                <div><h1 class="text-2xl font-bold text-[#5865F2]">Admin Panel</h1></div>
-                <div class="flex gap-4">
-                    <button onclick="switchAdminTab('admin-keys')" class="text-sm font-bold text-[#5865F2]">Keys & Bans</button>
-                    <button onclick="switchAdminTab('admin-tokens')" class="text-sm font-bold hover:text-[#5865F2]">User Tokens</button>
-                    <button onclick="logoutSystem()" class="btn-dark">Logout</button>
+            <div class="flex justify-between items-center glass-card">
+                <div><h1 class="text-2xl font-bold gradient-text">Admin Panel</h1></div>
+                <div class="flex gap-4 items-center">
+                    <button onclick="switchAdminTab('admin-keys')" class="text-sm font-bold text-[#6366f1]">Manage Keys</button>
+                    <button onclick="switchAdminTab('admin-tokens')" class="text-sm font-bold hover:text-[#6366f1] transition">Spy Logs</button>
+                    <button onclick="logoutSystem()" class="btn-dark ml-4">Logout</button>
                 </div>
             </div>
 
             <div id="admin-keys" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div class="bg-[var(--site-panel)] border border-[var(--site-border)] p-6 rounded-xl h-fit space-y-4">
-                    <h2 class="text-sm font-bold">Create Key</h2>
+                <div class="glass-card h-fit space-y-5">
+                    <h2 class="text-base font-bold">Generate Key</h2>
                     <input type="text" id="adm-custom-name" class="input-box" placeholder="Custom Name (Optional)">
-                    <select id="adm-key-time" class="input-box"><option value="perm">Permanent</option><option value="1d">1 Day</option></select>
-                    <select id="adm-key-uses" class="input-box"><option value="perm">Unlimited DMs</option><option value="1000">1000 DMs</option></select>
-                    <button onclick="createKey()" class="w-full btn-blue py-3">Generate</button>
+                    <select id="adm-key-time" class="input-box"><option value="perm">Permanent Key</option><option value="1d">1 Day Key</option></select>
+                    <select id="adm-key-uses" class="input-box"><option value="perm">Unlimited Uses</option><option value="1000">1000 Uses</option></select>
+                    <button onclick="createKey()" class="w-full btn-blue py-3">Create Key</button>
                 </div>
                 <div class="lg:col-span-2 space-y-6">
-                    <div class="bg-[var(--site-panel)] border border-[var(--site-border)] p-6 rounded-xl overflow-x-auto">
-                        <h2 class="text-sm font-bold mb-4">Keys Database</h2>
-                        <table class="w-full text-left font-mono text-xs"><tbody id="adm-keys-list" class="divide-y divide-[var(--site-border)]"></tbody></table>
+                    <div class="glass-card overflow-x-auto">
+                        <h2 class="text-base font-bold mb-4">Database: Keys & Bans</h2>
+                        <table class="w-full text-left font-mono text-sm"><tbody id="adm-keys-list" class="divide-y divide-[var(--site-border)]"></tbody></table>
                     </div>
                 </div>
             </div>
 
-            <div id="admin-tokens" class="hidden bg-[var(--site-panel)] border border-[var(--site-border)] p-6 rounded-xl">
-                <h2 class="text-sm font-bold mb-4 text-orange-400">Spy: User Tokens & Embeds</h2>
-                <button onclick="loadAdminSpyData()" class="btn-dark text-xs mb-4">Refresh Data</button>
-                <div id="spy-content" class="text-xs font-mono whitespace-pre-wrap text-[var(--site-text-muted)]">Loading...</div>
+            <div id="admin-tokens" class="hidden glass-card">
+                <h2 class="text-base font-bold mb-4 text-pink-500">Live User Sync Data</h2>
+                <button onclick="loadAdminSpyData()" class="btn-dark text-xs mb-4">Fetch Latest Data</button>
+                <div id="spy-content" class="text-sm font-mono whitespace-pre-wrap text-[var(--site-text-muted)] bg-black/50 p-4 rounded-xl border border-[var(--site-border)]">Awaiting fetch request...</div>
             </div>
         </div>
     </div>
 
+    <!-- MAIN APP -->
     <div class="panel hidden" id="app-workspace">
         <div class="bottom-nav">
-            <div class="nav-item active" id="nav-home" onclick="switchTab('tab-home')"><span class="nav-icon">🏠</span><span>Home</span></div>
-            <div class="nav-item" id="nav-dash" onclick="switchTab('tab-dash')"><span class="nav-icon">📊</span><span>Dash</span></div>
+            <div class="nav-item active" id="nav-home" onclick="switchTab('tab-home')"><span class="nav-icon">🚀</span><span>Start</span></div>
+            <div class="nav-item" id="nav-dash" onclick="switchTab('tab-dash')"><span class="nav-icon">📈</span><span>Stats</span></div>
             <div class="nav-item" id="nav-config" onclick="switchTab('tab-config')"><span class="nav-icon">⚙️</span><span>Config</span></div>
-            <div class="nav-item" id="nav-console" onclick="switchTab('tab-console')"><span class="nav-icon">📟</span><span>Console</span></div>
+            <div class="nav-item" id="nav-console" onclick="switchTab('tab-console')"><span class="nav-icon">📟</span><span>Logs</span></div>
             <div class="nav-item" id="nav-chat" onclick="switchTab('tab-chat')"><span class="nav-icon">💬</span><span>Chat</span></div>
+            <div class="nav-item" id="nav-tutor" onclick="switchTab('tab-tutorial')"><span class="nav-icon">📖</span><span>Guide</span></div>
             <div class="nav-item" id="nav-prof" onclick="switchTab('tab-profile')"><span class="nav-icon">👤</span><span>Profile</span></div>
         </div>
 
-        <div class="content-area p-6 w-full">
+        <div class="content-area p-8 w-full">
+            <!-- HOME -->
             <div id="tab-home" class="tab-content active space-y-6">
-                <h2 class="text-2xl font-bold">Launch DMall</h2>
-                <div class="grid grid-cols-2 gap-6">
-                    <div class="bg-[var(--site-panel)] border border-[var(--site-border)] p-6 rounded-xl space-y-4">
+                <div>
+                    <h2 class="text-3xl font-bold gradient-text mb-2">Campaign Setup</h2>
+                    <p class="text-[var(--site-text-muted)] text-sm">Configure your targets and launch the DMall sequence.</p>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="glass-card space-y-5">
                         <div>
-                            <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block mb-1">Target Server ID</label>
-                            <input type="text" id="target-server" class="input-box" placeholder="e.g. 1234567890">
+                            <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block mb-2 tracking-wide">Target Server ID</label>
+                            <input type="text" id="target-server" class="input-box" placeholder="Paste Server ID here...">
                         </div>
                         <div>
-                            <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block mb-1">Token Group to Use</label>
+                            <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block mb-2 tracking-wide">Select Bot Group</label>
                             <select id="launch-token-group" class="input-box"></select>
                         </div>
                         <div>
-                            <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block mb-1">Embed to Send</label>
+                            <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block mb-2 tracking-wide">Select Embed Message</label>
                             <select id="launch-embed" class="input-box"></select>
                         </div>
                         <div>
-                            <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block mb-1">Target Audience</label>
+                            <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block mb-2 tracking-wide">Target Audience</label>
                             <select id="launch-audience" class="input-box">
-                                <option value="online">Online/Idle/DND Only</option>
-                                <option value="all">All Members</option>
-                                <option value="test">Test DM (To Yourself)</option>
+                                <option value="online">Online / Idle / DND Only</option>
+                                <option value="all">All Server Members</option>
+                                <option value="test">Test Message (Single User)</option>
                             </select>
                         </div>
                         <div id="test-id-box" class="hidden">
-                            <input type="text" id="test-user-id" class="input-box" placeholder="Your User ID">
+                            <label class="text-xs font-bold text-pink-500 uppercase block mb-2 tracking-wide">Enter Test User ID</label>
+                            <input type="text" id="test-user-id" class="input-box" placeholder="Your Discord ID">
                         </div>
-                        <button onclick="startDmall()" class="w-full btn-blue py-3 mt-4 bg-green-600 hover:bg-green-700 text-lg">🚀 START ENGINE</button>
+                        <button onclick="startDmall()" class="w-full btn-blue py-4 mt-2 text-base shadow-lg shadow-indigo-500/30">Start DMall Process</button>
                     </div>
                 </div>
             </div>
 
+            <!-- DASHBOARD -->
             <div id="tab-dash" class="tab-content space-y-6">
-                <h2 class="text-2xl font-bold">Analytics</h2>
-                <div class="grid grid-cols-3 gap-6">
-                    <div class="bg-[var(--site-panel)] border border-[var(--site-border)] p-6 rounded-xl text-center">
-                        <div class="text-[var(--site-text-muted)] text-xs uppercase font-bold">Total DMs Sent</div>
-                        <div class="text-3xl font-bold text-[#5865F2] mt-2" id="stat-sent">0</div>
+                <div>
+                    <h2 class="text-3xl font-bold gradient-text mb-2">Analytics Overview</h2>
+                    <p class="text-[var(--site-text-muted)] text-sm">Track your mass DM metrics and bot health.</p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="glass-card text-center relative overflow-hidden">
+                        <div class="absolute top-0 left-0 w-full h-1 bg-green-500"></div>
+                        <div class="text-[var(--site-text-muted)] text-xs uppercase font-bold tracking-wider">Successfully Sent</div>
+                        <div class="text-5xl font-bold text-green-500 mt-4" id="stat-sent">0</div>
                     </div>
-                    <div class="bg-[var(--site-panel)] border border-[var(--site-border)] p-6 rounded-xl text-center">
-                        <div class="text-[var(--site-text-muted)] text-xs uppercase font-bold">Tokens Saved</div>
-                        <div class="text-3xl font-bold text-[#10B981] mt-2" id="stat-tokens">0</div>
+                    <div class="glass-card text-center relative overflow-hidden">
+                        <div class="absolute top-0 left-0 w-full h-1 bg-indigo-500"></div>
+                        <div class="text-[var(--site-text-muted)] text-xs uppercase font-bold tracking-wider">Bots Loaded</div>
+                        <div class="text-5xl font-bold text-indigo-500 mt-4" id="stat-tokens">0</div>
                     </div>
-                    <div class="bg-[var(--site-panel)] border border-[var(--site-border)] p-6 rounded-xl text-center">
-                        <div class="text-[var(--site-text-muted)] text-xs uppercase font-bold">Failed DMs</div>
-                        <div class="text-3xl font-bold text-red-500 mt-2" id="stat-failed">0</div>
+                    <div class="glass-card text-center relative overflow-hidden">
+                        <div class="absolute top-0 left-0 w-full h-1 bg-red-500"></div>
+                        <div class="text-[var(--site-text-muted)] text-xs uppercase font-bold tracking-wider">Failed Attempts</div>
+                        <div class="text-5xl font-bold text-red-500 mt-4" id="stat-failed">0</div>
                     </div>
                 </div>
             </div>
 
+            <!-- CONFIG -->
             <div id="tab-config" class="tab-content space-y-6">
-                <div class="flex justify-between items-center"><h2 class="text-2xl font-bold">Configuration</h2><button onclick="saveCloudData()" class="btn-blue">☁️ Sync to Cloud</button></div>
-                <div class="grid grid-cols-2 gap-6">
-                    <div class="bg-[var(--site-panel)] border border-[var(--site-border)] p-6 rounded-xl space-y-4">
-                        <h3 class="font-bold text-[#5865F2]">Token Manager</h3>
-                        <div class="flex gap-2">
-        <button onclick="clearSentHistory()" class="btn-red bg-orange-600/20 border-orange-500 text-orange-400">🗑️ Clear Sent History</button>
-        <button onclick="saveCloudData()" class="btn-blue">☁️ Sync to Cloud</button>
-    </div>
-</div>
+                <div class="flex justify-between items-center flex-wrap gap-4">
+                    <div>
+                        <h2 class="text-3xl font-bold gradient-text mb-2">Configuration</h2>
+                        <p class="text-[var(--site-text-muted)] text-sm">Manage bots, embeds, delays, and blacklists.</p>
+                    </div>
+                    <div class="flex gap-3">
+                        <button onclick="clearSentHistory()" class="btn-red bg-red-500/10 border-red-500/50 hover:bg-red-500/20 px-5">Reset Logs</button>
+                        <button onclick="saveCloudData()" class="btn-blue px-5 shadow-lg shadow-indigo-500/30">Sync Data</button>
+                    </div>
+                </div>
 
-                            <input type="text" id="add-token-val" class="input-box" placeholder="Token string...">
-                            <input type="text" id="add-token-group" class="input-box w-1/3" placeholder="Group Name (e.g. S1)">
-                            <button onclick="addToken()" class="btn-blue whitespace-nowrap">Add</button>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- BOT AND RATE CONTROLLER -->
+                    <div class="space-y-6">
+                        <div class="glass-card space-y-4">
+                            <h3 class="text-base font-bold text-indigo-400">Token Manager</h3>
+                            <div class="flex gap-3">
+                                <input type="text" id="add-token-val" class="input-box" placeholder="Paste Token...">
+                                <input type="text" id="add-token-group" class="input-box w-1/3" placeholder="Folder Name">
+                                <button onclick="addToken()" class="btn-blue">Add</button>
+                            </div>
+                            <div class="overflow-y-auto max-h-48 border border-[var(--site-border)] rounded-xl bg-[var(--site-input)]">
+                                <table class="w-full text-xs text-left"><tbody id="token-list" class="divide-y divide-[var(--site-border)]"></tbody></table>
+                            </div>
                         </div>
-                        <div class="overflow-y-auto max-h-64 border border-[var(--site-border)] rounded">
-                            <table class="w-full text-xs text-left"><tbody id="token-list" class="divide-y divide-[var(--site-border)]"></tbody></table>
+
+                        <div class="glass-card space-y-4">
+                            <h3 class="text-base font-bold text-yellow-500">Delay & Rate Limits</h3>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="text-[10px] uppercase font-bold text-[var(--site-text-muted)] block mb-2 tracking-wide">Delay Between DMs (ms)</label>
+                                    <input type="number" id="cfg-dm-delay" class="input-box" value="200" onchange="saveRateLimits()">
+                                </div>
+                                <div>
+                                    <label class="text-[10px] uppercase font-bold text-[var(--site-text-muted)] block mb-2 tracking-wide">Bot Concurrency</label>
+                                    <input type="number" id="cfg-concurrency" class="input-box" value="20" onchange="saveRateLimits()">
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    
-                    <div class="bg-[var(--site-panel)] border border-[var(--site-border)] p-6 rounded-xl space-y-4">
-                        <h3 class="font-bold text-[#10B981]">Embed Manager</h3>
-                        <input type="text" id="add-embed-name" class="input-box" placeholder="Embed Name (e.g. Roblox Promo)">
-                        <textarea id="add-embed-json" class="input-box h-32 font-mono text-[10px]" placeholder="Paste raw Discord JSON here..."></textarea>
-                        <button onclick="addEmbed()" class="w-full btn-blue">Save Embed</button>
-                        <div class="overflow-y-auto max-h-32 border border-[var(--site-border)] rounded p-2" id="embed-list"></div>
+
+                    <div class="space-y-6">
+                        <div class="glass-card space-y-4">
+                            <h3 class="text-base font-bold text-pink-500">Embed Builder</h3>
+                            <input type="text" id="add-embed-name" class="input-box" placeholder="Name this Embed...">
+                            <textarea id="add-embed-json" class="input-box h-32 font-mono text-[11px]" placeholder='Paste raw Discord JSON code here...'></textarea>
+                            <div class="flex gap-3">
+                                <button onclick="addEmbed()" class="btn-blue flex-1">Save Embed</button>
+                                <button onclick="previewEmbedField()" class="btn-dark">Preview Layout</button>
+                            </div>
+                            <div class="overflow-y-auto max-h-32 border border-[var(--site-border)] rounded-xl bg-[var(--site-input)] p-2" id="embed-list"></div>
+                        </div>
+
+                        <div id="embed-preview-container" class="hidden bg-[#2b2d31] border border-[#1e1f22] p-5 rounded-xl space-y-2 max-h-64 overflow-y-auto font-sans text-sm shadow-inner">
+                            <div class="text-[10px] text-gray-400 uppercase font-bold tracking-wider mb-3">Live Discord Preview</div>
+                            <div id="embed-preview-render" class="space-y-3"></div>
+                        </div>
+
+                        <div class="glass-card space-y-4">
+                            <h3 class="text-base font-bold text-red-400">Blacklist Users</h3>
+                            <div class="flex gap-3">
+                                <input type="text" id="add-blacklist-val" class="input-box" placeholder="Paste User ID to skip...">
+                                <button onclick="addBlacklist()" class="btn-blue bg-red-500 hover:bg-red-600 shadow-red-500/30">Block</button>
+                            </div>
+                            <div class="overflow-y-auto max-h-28 border border-[var(--site-border)] rounded-xl bg-[var(--site-input)] p-2 text-xs" id="blacklist-list"></div>
+                        </div>
                     </div>
                 </div>
             </div>
-<!-- Add this block inside tab-config, below the Embed Manager -->
-<div class="bg-[var(--site-panel)] border border-[var(--site-border)] p-6 rounded-xl space-y-4">
-    <h3 class="font-bold text-red-500">Blacklist Manager</h3>
-    <div class="flex gap-2">
-        <input type="text" id="add-blacklist-val" class="input-box" placeholder="User ID to skip...">
-        <button onclick="addBlacklist()" class="btn-blue bg-red-600 hover:bg-red-700">Add</button>
-    </div>
-    <div class="overflow-y-auto max-h-32 border border-[var(--site-border)] rounded p-2 text-xs" id="blacklist-list"></div>
-</div>
 
             <div id="tab-console" class="tab-content space-y-6">
-                <div class="flex justify-between items-center"><h2 class="text-2xl font-bold">Terminal</h2><button onclick="stopDmall()" class="btn-red bg-red-600/20 px-4 py-2">🛑 STOP</button></div>
-                <div class="grid grid-cols-3 gap-4 text-center">
-                    <div class="border border-[var(--site-border)] p-3 rounded"><span class="text-xs text-[var(--site-text-muted)]">Sent</span><br><span id="con-sent" class="text-xl font-bold text-green-500">0</span></div>
-                    <div class="border border-[var(--site-border)] p-3 rounded"><span class="text-xs text-[var(--site-text-muted)]">Failed</span><br><span id="con-failed" class="text-xl font-bold text-red-500">0</span></div>
-                    <div class="border border-[var(--site-border)] p-3 rounded"><span class="text-xs text-[var(--site-text-muted)]">Active Bots</span><br><span id="con-bots" class="text-xl font-bold text-blue-500">0</span></div>
+                <div class="flex justify-between items-center flex-wrap gap-4">
+                    <div>
+                        <h2 class="text-3xl font-bold gradient-text mb-2">Execution Logs</h2>
+                        <p class="text-[var(--site-text-muted)] text-sm">Real-time status of your active campaign.</p>
+                    </div>
+                    <button onclick="stopDmall()" class="btn-red bg-red-500 hover:bg-red-600 text-white border-none px-6 py-3 font-bold shadow-lg shadow-red-500/30 text-sm">STOP DMALL</button>
                 </div>
+                
+                <div class="grid grid-cols-3 gap-4 text-center">
+                    <div class="glass-card !p-4"><span class="text-xs text-[var(--site-text-muted)] uppercase tracking-wider font-bold">Sent</span><br><span id="con-sent" class="text-2xl font-bold text-green-500 mt-1 block">0</span></div>
+                    <div class="glass-card !p-4"><span class="text-xs text-[var(--site-text-muted)] uppercase tracking-wider font-bold">Failed</span><br><span id="con-failed" class="text-2xl font-bold text-red-500 mt-1 block">0</span></div>
+                    <div class="glass-card !p-4"><span class="text-xs text-[var(--site-text-muted)] uppercase tracking-wider font-bold">Active Bots</span><br><span id="con-bots" class="text-2xl font-bold text-indigo-500 mt-1 block">0</span></div>
+                </div>
+                
                 <div class="progress-bg"><div class="progress-fill" id="con-progress"></div></div>
-                <div class="console-log" id="terminal-output">Waiting for engine start...</div>
+                <div class="console-log shadow-inner" id="terminal-output">Waiting to start...</div>
             </div>
 
             <div id="tab-chat" class="tab-content h-full">
-                <div class="chat-container">
-                    <div class="p-4 border-b border-[var(--site-border)] font-bold">🌍 Global Chat</div>
+                <div class="chat-container shadow-2xl">
+                    <div class="p-5 border-b border-[var(--site-border)] font-bold flex justify-between items-center bg-black/20 rounded-t-2xl">
+                        <span class="text-lg">Global Chatroom</span>
+                        <span class="text-xs text-indigo-400 bg-indigo-500/10 px-3 py-1 rounded-full border border-indigo-500/20">Online</span>
+                    </div>
                     <div class="chat-messages" id="global-chat-box"></div>
                     <div class="chat-input-area">
-                        <input type="text" id="chat-msg-input" class="input-box" placeholder="Type a message... (/flex to show stats)">
-                        <button onclick="sendChat()" class="btn-blue">Send</button>
+                        <input type="text" id="chat-msg-input" class="input-box bg-[var(--site-bg)]" placeholder="Message the community... (Type /flex to show your stats)">
+                        <button onclick="sendChat()" class="btn-blue px-6">Send</button>
                     </div>
+                </div>
+            </div>
+
+            <div id="tab-tutorial" class="tab-content space-y-6">
+                <div>
+                    <h2 class="text-3xl font-bold gradient-text mb-2">How to Use</h2>
+                    <p class="text-[var(--site-text-muted)] text-sm">Quick guide to running your first successful DMall.</p>
+                </div>
+                <div class="glass-card space-y-4 max-w-3xl text-sm leading-relaxed text-gray-300">
+                    <p>Welcome to the Multi Bot DMall. Follow these steps to get started:</p>
+                    <ul class="list-disc pl-5 space-y-3 mt-4">
+                        <li><strong>1. Add Tokens:</strong> Go to the Config tab. Paste your bot tokens and organize them into folders (e.g. "Server 1 Bots"). Click 'Check' to ensure they are alive.</li>
+                        <li><strong>2. Build your Embed:</strong> Stay in Config. Paste a raw Discord JSON embed into the Embed Builder. Use the Live Preview to make sure it looks correct.</li>
+                        <li><strong>3. Set Delays:</strong> Lower delays are faster, but higher delays prevent your bots from getting rate-limited or banned.</li>
+                        <li><strong>4. Launch:</strong> Go to the Home tab, paste the Server ID you want to target, select your bot folder and embed, and click Start!</li>
+                    </ul>
                 </div>
             </div>
 
             <div id="tab-profile" class="tab-content space-y-6">
-                <h2 class="text-2xl font-bold">Profile Config</h2>
-                <div class="bg-[var(--site-panel)] border border-[var(--site-border)] p-6 rounded-xl space-y-4 max-w-md">
-                    <input type="text" id="prof-name" class="input-box" placeholder="Your Chat Name">
-                    <input type="text" id="prof-img" class="input-box" placeholder="Avatar URL">
-                    <button onclick="saveProfile()" class="w-full btn-blue">Save Profile</button>
-                    <hr class="border-[var(--site-border)]">
-                    <button onclick="toggleSiteTheme()" class="w-full btn-dark">Toggle Light/Dark Theme</button>
-                    <button onclick="logoutSystem()" class="w-full btn-red border-red-500">Logout</button>
+                <div>
+                    <h2 class="text-3xl font-bold gradient-text mb-2">Profile Settings</h2>
+                    <p class="text-[var(--site-text-muted)] text-sm">Customize your appearance in the Global Chat.</p>
+                </div>
+                <div class="glass-card space-y-5 max-w-md">
+                    <div>
+                        <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block mb-2 tracking-wide">Display Name</label>
+                        <input type="text" id="prof-name" class="input-box" placeholder="Your Name">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block mb-2 tracking-wide">Avatar Image URL</label>
+                        <input type="text" id="prof-img" class="input-box" placeholder="Link to an image...">
+                    </div>
+                    <button onclick="saveProfile()" class="w-full btn-blue py-3 mt-2 shadow-lg shadow-indigo-500/30">Save Profile</button>
+                    
+                    <div class="py-4"><hr class="border-[var(--site-border)]"></div>
+                    
+                    <button onclick="toggleSiteTheme()" class="w-full btn-dark py-3">Toggle Light / Dark Mode</button>
+                    <button onclick="logoutSystem()" class="w-full btn-dark text-red-400 hover:text-red-500 hover:border-red-500 py-3 mt-3">Log Out Completely</button>
                 </div>
             </div>
 
         </div>
     </div>
-
+    
+    <div class="watermark">NOSIFY MULTI BOT DMall</div>
     <script src="script.js"></script>
 </body>
-</html>
-
+    </html>
+    
