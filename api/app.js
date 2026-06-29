@@ -1,15 +1,16 @@
-// api/app.js
 export default async function handler(req, res) {
-    const KV_URL = process.env.KV_REST_API_URL;
-    const KV_TOKEN = process.env.KV_REST_API_TOKEN;
+    // FIXED: Added fallback for Vercel prefixes
+    const KV_URL = process.env.nosify_db_KV_REST_API_URL || process.env.KV_REST_API_URL;
+    const KV_TOKEN = process.env.nosify_db_KV_REST_API_TOKEN || process.env.KV_REST_API_TOKEN;
 
     async function getDB() {
-        // CHANGED: nosify_dmall_global
+        if (!KV_URL) return { chat: [], cloudData: {} };
         const resp = await fetch(`${KV_URL}/get/nosify_dmall_global`, { headers: { Authorization: `Bearer ${KV_TOKEN}` }});
         const data = await resp.json();
         return data.result ? JSON.parse(data.result) : { chat: [], cloudData: {} };
     }
     async function saveDB(db) {
+        if (!KV_URL) return;
         await fetch(`${KV_URL}/set/nosify_dmall_global`, { method: 'POST', headers: { Authorization: `Bearer ${KV_TOKEN}` }, body: JSON.stringify(db) });
     }
 
@@ -34,4 +35,4 @@ export default async function handler(req, res) {
         await saveDB(db);
         return res.status(200).json({ success: true });
     }
-}
+                            }
