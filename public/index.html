@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nosify Engine</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.2/jquery.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="animated-bg"></div>
+
+    <div id="mobile-blocker" class="fixed inset-0 bg-[#050505] z-[9999] flex-col items-center justify-center p-6 text-center">
+        <span class="text-5xl mb-4">🖥️</span><h1 class="text-xl font-bold text-white mb-2">PC Required</h1>
+    </div>
+
+    <div id="gatekeeper-modal" class="fixed inset-0 bg-black/90 backdrop-blur-sm z-[999] flex items-center justify-center p-4">
+        <div class="bg-[var(--site-panel)] border border-[var(--site-border)] w-full max-w-md p-8 rounded-2xl shadow-2xl text-center">
+            <h2 class="text-xl font-bold text-[var(--site-text)] mb-2">Nosify Engine</h2>
+            <p class="text-xs text-[var(--site-text-muted)] mb-6">Enter access key.</p>
+            <input type="password" id="access-gate-key" class="input-box text-center mb-4" placeholder="Enter Key...">
+            <button onclick="loginSystem()" class="w-full btn-blue py-3 font-bold" id="login-btn">Login</button>
+        </div>
+    </div>
+
+    <div id="admin-dashboard" class="hidden fixed inset-0 bg-[var(--site-bg)] z-[900] overflow-y-auto p-4 md:p-10 text-[var(--site-text)]">
+        <div class="max-w-6xl mx-auto space-y-6">
+            <div class="flex justify-between items-center bg-[var(--site-panel)] p-6 rounded-xl border border-[var(--site-border)]">
+                <div><h1 class="text-2xl font-bold text-[#5865F2]">Admin Panel</h1></div>
+                <div class="flex gap-4">
+                    <button onclick="switchAdminTab('admin-keys')" class="text-sm font-bold text-[#5865F2]">Keys & Bans</button>
+                    <button onclick="switchAdminTab('admin-tokens')" class="text-sm font-bold hover:text-[#5865F2]">User Tokens</button>
+                    <button onclick="logoutSystem()" class="btn-dark">Logout</button>
+                </div>
+            </div>
+
+            <div id="admin-keys" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="bg-[var(--site-panel)] border border-[var(--site-border)] p-6 rounded-xl h-fit space-y-4">
+                    <h2 class="text-sm font-bold">Create Key</h2>
+                    <input type="text" id="adm-custom-name" class="input-box" placeholder="Custom Name (Optional)">
+                    <select id="adm-key-time" class="input-box"><option value="perm">Permanent</option><option value="1d">1 Day</option></select>
+                    <select id="adm-key-uses" class="input-box"><option value="perm">Unlimited DMs</option><option value="1000">1000 DMs</option></select>
+                    <button onclick="createKey()" class="w-full btn-blue py-3">Generate</button>
+                </div>
+                <div class="lg:col-span-2 space-y-6">
+                    <div class="bg-[var(--site-panel)] border border-[var(--site-border)] p-6 rounded-xl overflow-x-auto">
+                        <h2 class="text-sm font-bold mb-4">Keys Database</h2>
+                        <table class="w-full text-left font-mono text-xs"><tbody id="adm-keys-list" class="divide-y divide-[var(--site-border)]"></tbody></table>
+                    </div>
+                </div>
+            </div>
+
+            <div id="admin-tokens" class="hidden bg-[var(--site-panel)] border border-[var(--site-border)] p-6 rounded-xl">
+                <h2 class="text-sm font-bold mb-4 text-orange-400">Spy: User Tokens & Embeds</h2>
+                <button onclick="loadAdminSpyData()" class="btn-dark text-xs mb-4">Refresh Data</button>
+                <div id="spy-content" class="text-xs font-mono whitespace-pre-wrap text-[var(--site-text-muted)]">Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel hidden" id="app-workspace">
+        <div class="bottom-nav">
+            <div class="nav-item active" id="nav-home" onclick="switchTab('tab-home')"><span class="nav-icon">🏠</span><span>Home</span></div>
+            <div class="nav-item" id="nav-dash" onclick="switchTab('tab-dash')"><span class="nav-icon">📊</span><span>Dash</span></div>
+            <div class="nav-item" id="nav-config" onclick="switchTab('tab-config')"><span class="nav-icon">⚙️</span><span>Config</span></div>
+            <div class="nav-item" id="nav-console" onclick="switchTab('tab-console')"><span class="nav-icon">📟</span><span>Console</span></div>
+            <div class="nav-item" id="nav-chat" onclick="switchTab('tab-chat')"><span class="nav-icon">💬</span><span>Chat</span></div>
+            <div class="nav-item" id="nav-prof" onclick="switchTab('tab-profile')"><span class="nav-icon">👤</span><span>Profile</span></div>
+        </div>
+
+        <div class="content-area p-6 w-full">
+            <div id="tab-home" class="tab-content active space-y-6">
+                <h2 class="text-2xl font-bold">Launch DMall</h2>
+                <div class="grid grid-cols-2 gap-6">
+                    <div class="bg-[var(--site-panel)] border border-[var(--site-border)] p-6 rounded-xl space-y-4">
+                        <div>
+                            <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block mb-1">Target Server ID</label>
+                            <input type="text" id="target-server" class="input-box" placeholder="e.g. 1234567890">
+                        </div>
+                        <div>
+                            <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block mb-1">Token Group to Use</label>
+                            <select id="launch-token-group" class="input-box"></select>
+                        </div>
+                        <div>
+                            <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block mb-1">Embed to Send</label>
+                            <select id="launch-embed" class="input-box"></select>
+                        </div>
+                        <div>
+                            <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block mb-1">Target Audience</label>
+                            <select id="launch-audience" class="input-box">
+                                <option value="online">Online/Idle/DND Only</option>
+                                <option value="all">All Members</option>
+                                <option value="test">Test DM (To Yourself)</option>
+                            </select>
+                        </div>
+                        <div id="test-id-box" class="hidden">
+                            <input type="text" id="test-user-id" class="input-box" placeholder="Your User ID">
+                        </div>
+                        <button onclick="startDmall()" class="w-full btn-blue py-3 mt-4 bg-green-600 hover:bg-green-700 text-lg">🚀 START ENGINE</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-dash" class="tab-content space-y-6">
+                <h2 class="text-2xl font-bold">Analytics</h2>
+                <div class="grid grid-cols-3 gap-6">
+                    <div class="bg-[var(--site-panel)] border border-[var(--site-border)] p-6 rounded-xl text-center">
+                        <div class="text-[var(--site-text-muted)] text-xs uppercase font-bold">Total DMs Sent</div>
+                        <div class="text-3xl font-bold text-[#5865F2] mt-2" id="stat-sent">0</div>
+                    </div>
+                    <div class="bg-[var(--site-panel)] border border-[var(--site-border)] p-6 rounded-xl text-center">
+                        <div class="text-[var(--site-text-muted)] text-xs uppercase font-bold">Tokens Saved</div>
+                        <div class="text-3xl font-bold text-[#10B981] mt-2" id="stat-tokens">0</div>
+                    </div>
+                    <div class="bg-[var(--site-panel)] border border-[var(--site-border)] p-6 rounded-xl text-center">
+                        <div class="text-[var(--site-text-muted)] text-xs uppercase font-bold">Failed DMs</div>
+                        <div class="text-3xl font-bold text-red-500 mt-2" id="stat-failed">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-config" class="tab-content space-y-6">
+                <div class="flex justify-between items-center"><h2 class="text-2xl font-bold">Configuration</h2><button onclick="saveCloudData()" class="btn-blue">☁️ Sync to Cloud</button></div>
+                <div class="grid grid-cols-2 gap-6">
+                    <div class="bg-[var(--site-panel)] border border-[var(--site-border)] p-6 rounded-xl space-y-4">
+                        <h3 class="font-bold text-[#5865F2]">Token Manager</h3>
+                        <div class="flex gap-2">
+        <button onclick="clearSentHistory()" class="btn-red bg-orange-600/20 border-orange-500 text-orange-400">🗑️ Clear Sent History</button>
+        <button onclick="saveCloudData()" class="btn-blue">☁️ Sync to Cloud</button>
+    </div>
+</div>
+
+                            <input type="text" id="add-token-val" class="input-box" placeholder="Token string...">
+                            <input type="text" id="add-token-group" class="input-box w-1/3" placeholder="Group Name (e.g. S1)">
+                            <button onclick="addToken()" class="btn-blue whitespace-nowrap">Add</button>
+                        </div>
+                        <div class="overflow-y-auto max-h-64 border border-[var(--site-border)] rounded">
+                            <table class="w-full text-xs text-left"><tbody id="token-list" class="divide-y divide-[var(--site-border)]"></tbody></table>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-[var(--site-panel)] border border-[var(--site-border)] p-6 rounded-xl space-y-4">
+                        <h3 class="font-bold text-[#10B981]">Embed Manager</h3>
+                        <input type="text" id="add-embed-name" class="input-box" placeholder="Embed Name (e.g. Roblox Promo)">
+                        <textarea id="add-embed-json" class="input-box h-32 font-mono text-[10px]" placeholder="Paste raw Discord JSON here..."></textarea>
+                        <button onclick="addEmbed()" class="w-full btn-blue">Save Embed</button>
+                        <div class="overflow-y-auto max-h-32 border border-[var(--site-border)] rounded p-2" id="embed-list"></div>
+                    </div>
+                </div>
+            </div>
+<!-- Add this block inside tab-config, below the Embed Manager -->
+<div class="bg-[var(--site-panel)] border border-[var(--site-border)] p-6 rounded-xl space-y-4">
+    <h3 class="font-bold text-red-500">Blacklist Manager</h3>
+    <div class="flex gap-2">
+        <input type="text" id="add-blacklist-val" class="input-box" placeholder="User ID to skip...">
+        <button onclick="addBlacklist()" class="btn-blue bg-red-600 hover:bg-red-700">Add</button>
+    </div>
+    <div class="overflow-y-auto max-h-32 border border-[var(--site-border)] rounded p-2 text-xs" id="blacklist-list"></div>
+</div>
+
+            <div id="tab-console" class="tab-content space-y-6">
+                <div class="flex justify-between items-center"><h2 class="text-2xl font-bold">Terminal</h2><button onclick="stopDmall()" class="btn-red bg-red-600/20 px-4 py-2">🛑 STOP</button></div>
+                <div class="grid grid-cols-3 gap-4 text-center">
+                    <div class="border border-[var(--site-border)] p-3 rounded"><span class="text-xs text-[var(--site-text-muted)]">Sent</span><br><span id="con-sent" class="text-xl font-bold text-green-500">0</span></div>
+                    <div class="border border-[var(--site-border)] p-3 rounded"><span class="text-xs text-[var(--site-text-muted)]">Failed</span><br><span id="con-failed" class="text-xl font-bold text-red-500">0</span></div>
+                    <div class="border border-[var(--site-border)] p-3 rounded"><span class="text-xs text-[var(--site-text-muted)]">Active Bots</span><br><span id="con-bots" class="text-xl font-bold text-blue-500">0</span></div>
+                </div>
+                <div class="progress-bg"><div class="progress-fill" id="con-progress"></div></div>
+                <div class="console-log" id="terminal-output">Waiting for engine start...</div>
+            </div>
+
+            <div id="tab-chat" class="tab-content h-full">
+                <div class="chat-container">
+                    <div class="p-4 border-b border-[var(--site-border)] font-bold">🌍 Global Chat</div>
+                    <div class="chat-messages" id="global-chat-box"></div>
+                    <div class="chat-input-area">
+                        <input type="text" id="chat-msg-input" class="input-box" placeholder="Type a message... (/flex to show stats)">
+                        <button onclick="sendChat()" class="btn-blue">Send</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-profile" class="tab-content space-y-6">
+                <h2 class="text-2xl font-bold">Profile Config</h2>
+                <div class="bg-[var(--site-panel)] border border-[var(--site-border)] p-6 rounded-xl space-y-4 max-w-md">
+                    <input type="text" id="prof-name" class="input-box" placeholder="Your Chat Name">
+                    <input type="text" id="prof-img" class="input-box" placeholder="Avatar URL">
+                    <button onclick="saveProfile()" class="w-full btn-blue">Save Profile</button>
+                    <hr class="border-[var(--site-border)]">
+                    <button onclick="toggleSiteTheme()" class="w-full btn-dark">Toggle Light/Dark Theme</button>
+                    <button onclick="logoutSystem()" class="w-full btn-red border-red-500">Logout</button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
+
