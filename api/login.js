@@ -1,4 +1,3 @@
-// api/login.js
 export default async function handler(req, res) {
     if (req.method !== 'POST') return res.status(405).json({ error: "Method not allowed" });
     
@@ -7,13 +6,13 @@ export default async function handler(req, res) {
 
     if (key === ADMIN_PASS) return res.status(200).json({ success: true, role: "admin" });
 
-    const KV_URL = process.env.KV_REST_API_URL;
-    const KV_TOKEN = process.env.KV_REST_API_TOKEN;
+    // FIXED: Added fallback for Vercel prefixes
+    const KV_URL = process.env.nosify_db_KV_REST_API_URL || process.env.KV_REST_API_URL;
+    const KV_TOKEN = process.env.nosify_db_KV_REST_API_TOKEN || process.env.KV_REST_API_TOKEN;
 
     if (!KV_URL || !KV_TOKEN) return res.status(500).json({ success: false, error: "Database connection tokens missing." });
 
     try {
-        // CHANGED: Now uses nosify_dmall_data to avoid chat app conflict
         const resp = await fetch(`${KV_URL}/get/nosify_dmall_data`, { headers: { Authorization: `Bearer ${KV_TOKEN}` }});
         const data = await resp.json();
         let db = data.result ? JSON.parse(data.result) : { keys: [], bans: [], logs: [] };
@@ -43,4 +42,5 @@ export default async function handler(req, res) {
     } catch (err) {
         return res.status(500).json({ success: false, error: "Internal database read error." });
     }
-                                                                                     }
+                                       }
+            
