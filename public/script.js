@@ -438,6 +438,47 @@ function logTerminalOutput(msg, type="info") {
 }
 
 // --- ADMIN API LOADERS ---
+// --- ADMIN ACTION HANDLERS ---
+async function adminAction(action, payload) {
+    await fetch('/api/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': adminPass },
+        body: JSON.stringify({ action, payload })
+    });
+    loadAdminKeys();
+}
+
+async function createKey() {
+    let customName = $("#adm-custom-name").val().trim();
+    let k = customName ? customName : "KEY-" + Math.random().toString(36).substr(2, 6).toUpperCase();
+    let time = $("#adm-key-time").val();
+    let max = $("#adm-key-uses").val();
+    let exp = null;
+    
+    if (time !== "perm") {
+        let ms = new Date().getTime();
+        if (time === "5h") exp = ms + (5*3600000);
+        if (time === "1d") exp = ms + (24*3600000);
+        if (time === "3d") exp = ms + (72*3600000);
+    }
+    
+    let payload = { key: k, time: time, max: max, left: max === "perm" ? "perm" : parseInt(max), expires: exp, claimedBy: null };
+    await adminAction('create_key', payload);
+    $("#adm-custom-name").val("");
+}
+
+function deleteKey(idx) { 
+    if(confirm("Are you sure you want to delete this key?")) {
+        adminAction('delete_key', idx); 
+    }
+}
+
+function copyKey(keyText) { 
+    navigator.clipboard.writeText(keyText); 
+    alert("Key copied to clipboard!"); 
+}
+
+// --- ADMIN API LOADERS (UPDATED WITH BUTTONS) ---
 async function loadAdminKeys() {
     if(!adminPass) return;
     const res = await fetch('/api/admin', { headers: { 'Authorization': adminPass }});
@@ -445,7 +486,16 @@ async function loadAdminKeys() {
     const db = await res.json();
     let html = "";
     db.keys.forEach((k, i) => {
-        html += `<tr class="border-b border-gray-800 hover:bg-white/5 transition"><td class="py-3 px-2 text-[#6366f1] font-bold">${k.key}</td><td class="py-3 px-2 text-gray-300">${k.time}</td><td class="py-3 px-2 text-green-400 font-mono">${k.left}</td><td class="py-3 px-2 text-gray-500 font-mono text-xs opacity-80">${k.claimedBy || 'Unused'}</td></tr>`;
+        html += `<tr class="border-b border-[var(--site-border)] hover:bg-white/5 transition">
+            <td class="py-3 px-2 text-[#6366f1] font-bold">${k.key}</td>
+            <td class="py-3 px-2 text-gray-300">${k.time}</td>
+            <td class="py-3 px-2 text-green-400 font-mono">${k.left}</td>
+            <td class="py-3 px-2 text-gray-500 font-mono text-xs opacity-80 truncate max-w-[80px]">${k.claimedBy || 'Unused'}</td>
+            <td class="py-3 px-2 text-right whitespace-nowrap">
+                <button onclick="copyKey('${k.key}')" class="bg-[#27272a] text-white text-[10px] px-3 py-1.5 rounded-lg mr-2 hover:bg-[#3f3f46] transition">Copy</button>
+                <button onclick="deleteKey(${i})" class="text-red-400 hover:text-red-500 font-bold text-sm transition">✕</button>
+            </td>
+        </tr>`;
     });
     $("#adm-keys-list").html(html);
 }
@@ -454,4 +504,4 @@ async function loadAdminSpyData() {
     let res = await fetch('/api/admin?spy=true', { headers: { 'Authorization': adminPass }});
     let data = await res.json();
     $("#spy-content").text(JSON.stringify(data, null, 2));
-                                                  }
+}
