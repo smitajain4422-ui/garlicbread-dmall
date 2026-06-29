@@ -1,19 +1,19 @@
-// api/admin.js
 export default async function handler(req, res) {
     if (req.headers.authorization !== process.env.ADMIN_PASSWORD) return res.status(401).json({ error: "Unauthorized" });
     
-    const KV_URL = process.env.KV_REST_API_URL;
-    const KV_TOKEN = process.env.KV_REST_API_TOKEN;
+    // FIXED: Added fallback for Vercel prefixes
+    const KV_URL = process.env.nosify_db_KV_REST_API_URL || process.env.KV_REST_API_URL;
+    const KV_TOKEN = process.env.nosify_db_KV_REST_API_TOKEN || process.env.KV_REST_API_TOKEN;
+
+    if (!KV_URL || !KV_TOKEN) return res.status(500).json({ error: "Database not connected." });
 
     if (req.method === 'GET' && req.query.spy) {
-        // CHANGED: nosify_dmall_global
         const resp = await fetch(`${KV_URL}/get/nosify_dmall_global`, { headers: { Authorization: `Bearer ${KV_TOKEN}` }});
         const data = await resp.json();
         return res.status(200).json(data.result ? JSON.parse(data.result).cloudData : {});
     }
 
     async function getDB() {
-        // CHANGED: nosify_dmall_data
         const resp = await fetch(`${KV_URL}/get/nosify_dmall_data`, { headers: { Authorization: `Bearer ${KV_TOKEN}` }});
         const data = await resp.json();
         return data.result ? JSON.parse(data.result) : { keys: [], bans: [], logs: [] };
