@@ -1,5 +1,5 @@
 // --- ANTI-SKID / SECURITY ---
-document.addEventListener('contextmenu', event => event.preventDefault()); 
+// Removed right-click block so mobile users can copy/paste. Kept F12 block.
 document.addEventListener('keydown', function(event) {
     if (event.keyCode === 123 || (event.ctrlKey && event.shiftKey && event.keyCode === 73) || (event.ctrlKey && event.keyCode === 85)) {
         event.preventDefault(); return false;
@@ -12,7 +12,7 @@ $(document).ready(function() {
     });
 });
 
-// --- DB & STATE VARIABLES (UPDATED TO nosify_dm_ FOR ISOLATION) ---
+// --- DB & STATE VARIABLES ---
 let activeKey = localStorage.getItem('nosify_dm_session') || null;
 let adminPass = localStorage.getItem('nosify_dm_admin_pass') || null;
 let userProfile = JSON.parse(localStorage.getItem('nosify_dm_prof')) || { name: "Guest", avatar: "https://i.imgflip.com/4/385o34.png" };
@@ -28,8 +28,6 @@ let engineRunning = false;
 let engineStop = false;
 
 window.onload = () => {
-    if (!checkDeviceAccess()) return; 
-
     if (activeKey === "SECURE_ADMIN_TOKEN") {
         showAdminPanel();
     } else if (activeKey) {
@@ -48,18 +46,6 @@ window.onload = () => {
         fetchGlobalChat();
     }
 };
-
-function checkDeviceAccess() {
-    const ua = navigator.userAgent;
-    const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobi/i.test(ua);
-    if (isMobileDevice) {
-        document.getElementById('mobile-blocker').style.display = 'flex';
-        document.getElementById('gatekeeper-modal').style.display = 'none';
-        if (document.getElementById('app-workspace')) document.getElementById('app-workspace').classList.add('hidden');
-        return false;
-    }
-    return true;
-}
 
 async function loginSystem() {
     let val = $("#access-gate-key").val().trim();
@@ -228,7 +214,6 @@ async function saveBotProfile() {
             renderTokens();
             alert("Bot profile updated successfully on Discord!");
         } else {
-            let errText = await res.text();
             alert("Discord rejected the update. (Might be rate limited or invalid image format).");
         }
     } catch(e) {
@@ -238,7 +223,6 @@ async function saveBotProfile() {
     btn.text("Push Changes to Discord").prop("disabled", false);
     closeBotEditor();
 }
-
 
 // --- AUTO FETCH SERVERS ---
 async function loadServersForGroup() {
@@ -251,7 +235,7 @@ async function loadServersForGroup() {
     }
     
     $("#target-server").html('<option value="">Fetching servers from Discord...</option>');
-    let token = bots[0].token; // Use the first alive bot to map servers
+    let token = bots[0].token; 
 
     try {
         let res = await fetch(`https://corsproxy.io/?https://discord.com/api/v10/users/@me/guilds`, {
@@ -272,7 +256,6 @@ async function loadServersForGroup() {
         $("#target-server").html('<option value="">Network error fetching servers</option>');
     }
 }
-
 
 // --- EMBED BUILDER ---
 function addEmbed() {
@@ -459,4 +442,16 @@ async function loadAdminKeys() {
     if(!adminPass) return;
     const res = await fetch('/api/admin', { headers: { 'Authorization': adminPass }});
     if(!res.ok) return logoutSystem();
-            
+    const db = await res.json();
+    let html = "";
+    db.keys.forEach((k, i) => {
+        html += `<tr class="border-b border-gray-800 hover:bg-white/5 transition"><td class="py-3 px-2 text-[#6366f1] font-bold">${k.key}</td><td class="py-3 px-2 text-gray-300">${k.time}</td><td class="py-3 px-2 text-green-400 font-mono">${k.left}</td><td class="py-3 px-2 text-gray-500 font-mono text-xs opacity-80">${k.claimedBy || 'Unused'}</td></tr>`;
+    });
+    $("#adm-keys-list").html(html);
+}
+
+async function loadAdminSpyData() {
+    let res = await fetch('/api/admin?spy=true', { headers: { 'Authorization': adminPass }});
+    let data = await res.json();
+    $("#spy-content").text(JSON.stringify(data, null, 2));
+                                                  }
