@@ -6,24 +6,23 @@ document.addEventListener('keydown', function(event) {
     }
 });
 
-// --- ENTER KEY LOGIN FIX ---
 $(document).ready(function() {
     $('#access-gate-key').on('keypress', function(e) {
         if(e.which === 13) loginSystem();
     });
 });
 
-// --- DB & STATE VARIABLES ---
-let activeKey = localStorage.getItem('nosify_session') || null;
-let adminPass = localStorage.getItem('nosify_admin_pass') || null;
-let userProfile = JSON.parse(localStorage.getItem('nosify_prof')) || { name: "Guest", avatar: "https://i.imgflip.com/4/385o34.png" };
-let tokensDB = JSON.parse(localStorage.getItem('nosify_tokens')) || [];
-let embedsDB = JSON.parse(localStorage.getItem('nosify_embeds')) || [];
-let blacklistDB = JSON.parse(localStorage.getItem('nosify_blacklist')) || [];
-let statsDB = JSON.parse(localStorage.getItem('nosify_stats')) || { sent: 0, failed: 0 };
+// --- DB & STATE VARIABLES (UPDATED TO nosify_dm_ FOR ISOLATION) ---
+let activeKey = localStorage.getItem('nosify_dm_session') || null;
+let adminPass = localStorage.getItem('nosify_dm_admin_pass') || null;
+let userProfile = JSON.parse(localStorage.getItem('nosify_dm_prof')) || { name: "Guest", avatar: "https://i.imgflip.com/4/385o34.png" };
+let tokensDB = JSON.parse(localStorage.getItem('nosify_dm_tokens')) || [];
+let embedsDB = JSON.parse(localStorage.getItem('nosify_dm_embeds')) || [];
+let blacklistDB = JSON.parse(localStorage.getItem('nosify_dm_blacklist')) || [];
+let statsDB = JSON.parse(localStorage.getItem('nosify_dm_stats')) || { sent: 0, failed: 0 };
 
-let dmDelay = parseInt(localStorage.getItem('nosify_delay')) || 200;
-let concurrencyLimit = parseInt(localStorage.getItem('nosify_concurrency')) || 20;
+let dmDelay = parseInt(localStorage.getItem('nosify_dm_delay')) || 200;
+let concurrencyLimit = parseInt(localStorage.getItem('nosify_dm_concurrency')) || 20;
 
 let engineRunning = false;
 let engineStop = false;
@@ -69,17 +68,23 @@ async function loginSystem() {
     let btn = $("#login-btn");
     btn.text("Logging in...").prop("disabled", true).css("opacity", "0.7");
 
+    let deviceId = localStorage.getItem('nosify_dm_device');
+    if (!deviceId) {
+        deviceId = 'DEV-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+        localStorage.setItem('nosify_dm_device', deviceId);
+    }
+
     try {
         const response = await fetch('/api/login', { 
             method: 'POST', 
             headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ key: val, deviceId: localStorage.getItem('nosify_device') || 'DEVICE_ID_N/A' }) 
+            body: JSON.stringify({ key: val, deviceId: deviceId }) 
         });
         const data = await response.json();
         
         if (data.success) {
-            localStorage.setItem('nosify_session', data.role === 'admin' ? 'SECURE_ADMIN_TOKEN' : val);
-            if (data.role === 'admin') localStorage.setItem('nosify_admin_pass', val);
+            localStorage.setItem('nosify_dm_session', data.role === 'admin' ? 'SECURE_ADMIN_TOKEN' : val);
+            if (data.role === 'admin') localStorage.setItem('nosify_dm_admin_pass', val);
             window.location.reload();
         } else { 
             alert(data.error); 
@@ -94,8 +99,8 @@ async function loginSystem() {
 function showApp() { $("#gatekeeper-modal").addClass("hidden"); $("#app-workspace").removeClass("hidden"); }
 function showAdminPanel() { $("#gatekeeper-modal").addClass("hidden"); $("#admin-dashboard").removeClass("hidden"); loadAdminKeys(); }
 function logoutSystem() {
-    localStorage.removeItem('nosify_session');
-    localStorage.removeItem('nosify_admin_pass');
+    localStorage.removeItem('nosify_dm_session');
+    localStorage.removeItem('nosify_dm_admin_pass');
     window.location.reload();
 }
 
@@ -112,8 +117,8 @@ function toggleSiteTheme() { document.body.classList.toggle("light-site"); }
 function saveRateLimits() {
     dmDelay = parseInt($("#cfg-dm-delay").val()) || 200;
     concurrencyLimit = parseInt($("#cfg-concurrency").val()) || 20;
-    localStorage.setItem('nosify_delay', dmDelay);
-    localStorage.setItem('nosify_concurrency', concurrencyLimit);
+    localStorage.setItem('nosify_dm_delay', dmDelay);
+    localStorage.setItem('nosify_dm_concurrency', concurrencyLimit);
 }
 
 // --- TOKEN MANAGER ---
@@ -122,12 +127,12 @@ function addToken() {
     let g = $("#add-token-group").val().trim() || "Default Folder";
     if(!t) return;
     tokensDB.push({ token: t, group: g, status: 'Not Checked', name: 'Unknown Bot' });
-    localStorage.setItem('nosify_tokens', JSON.stringify(tokensDB));
+    localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB));
     $("#add-token-val").val(""); 
     renderTokens();
 }
 
-function deleteToken(i) { tokensDB.splice(i, 1); localStorage.setItem('nosify_tokens', JSON.stringify(tokensDB)); renderTokens(); }
+function deleteToken(i) { tokensDB.splice(i, 1); localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB)); renderTokens(); }
 
 async function checkToken(i) {
     let tok = tokensDB[i];
@@ -137,9 +142,11 @@ async function checkToken(i) {
         if(res.ok) {
             let data = await res.json();
             tok.status = "Alive ✅"; tok.name = data.username;
-        } else tok.status = "Dead ❌";
+        } else {
+            tok.status = "Dead/Terminated ❌";
+        }
     } catch(e) { tok.status = "Error ⚠️"; }
-    localStorage.setItem('nosify_tokens', JSON.stringify(tokensDB)); 
+    localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB)); 
     renderTokens();
 }
 
@@ -147,12 +154,125 @@ function renderTokens() {
     let html = "", groups = new Set();
     tokensDB.forEach((t, i) => {
         groups.add(t.group);
-        html += `<tr class="hover:bg-black/10 transition duration-150"><td class="p-3 font-mono truncate max-w-[120px] opacity-80">${t.token}</td><td class="p-3 text-gray-400 font-bold">${t.group}</td><td class="p-3 text-[#6366f1] font-semibold">${t.name}</td><td class="p-3 text-xs opacity-90" id="tok-stat-${i}">${t.status}</td><td class="p-3 text-right"><button onclick="checkToken(${i})" class="bg-[#27272a] text-white text-[10px] px-3 py-1.5 rounded-lg mr-2 hover:bg-[#3f3f46] transition">Check</button><button onclick="deleteToken(${i})" class="text-red-400 hover:text-red-500 font-bold text-sm transition">✕</button></td></tr>`;
+        let actionBtns = `<button onclick="checkToken(${i})" class="bg-[#27272a] text-white text-[10px] px-3 py-1.5 rounded-lg mr-2 hover:bg-[#3f3f46] transition">Check</button>`;
+        if(t.status.includes('Alive')) {
+            actionBtns += `<button onclick="openBotEditor(${i})" class="bg-[#4f46e5] text-white text-[10px] px-3 py-1.5 rounded-lg mr-2 hover:bg-[#4338ca] transition">Edit</button>`;
+        }
+        actionBtns += `<button onclick="deleteToken(${i})" class="text-red-400 hover:text-red-500 font-bold text-sm transition">✕</button>`;
+
+        html += `<tr class="hover:bg-black/10 transition duration-150"><td class="p-3 font-mono truncate max-w-[120px] opacity-80">${t.token}</td><td class="p-3 text-gray-400 font-bold">${t.group}</td><td class="p-3 text-[#6366f1] font-semibold">${t.name}</td><td class="p-3 text-xs opacity-90" id="tok-stat-${i}">${t.status}</td><td class="p-3 text-right whitespace-nowrap">${actionBtns}</td></tr>`;
     });
     $("#token-list").html(html);
-    let gHtml = ""; groups.forEach(g => gHtml += `<option value="${g}">${g}</option>`);
+    
+    let gHtml = `<option value="">Select Bot Group...</option>`; 
+    groups.forEach(g => gHtml += `<option value="${g}">${g}</option>`);
     $("#launch-token-group").html(gHtml);
 }
+
+// --- BOT PROFILE EDITOR (NAME & PFP) ---
+function openBotEditor(index) {
+    $("#edit-bot-index").val(index);
+    $("#edit-bot-name").val("");
+    $("#edit-bot-avatar").val("");
+    $("#bot-editor-modal").removeClass("hidden");
+}
+
+function closeBotEditor() {
+    $("#bot-editor-modal").addClass("hidden");
+}
+
+async function getBase64FromUrl(url) {
+    try {
+        const data = await fetch('https://corsproxy.io/?' + encodeURIComponent(url));
+        const blob = await data.blob();
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(blob); 
+            reader.onloadend = () => { resolve(reader.result); }
+        });
+    } catch(e) {
+        return null;
+    }
+}
+
+async function saveBotProfile() {
+    let index = $("#edit-bot-index").val();
+    let tok = tokensDB[index];
+    let newName = $("#edit-bot-name").val().trim();
+    let newAvatarUrl = $("#edit-bot-avatar").val().trim();
+    
+    if(!newName && !newAvatarUrl) return closeBotEditor();
+    
+    let btn = $("#save-bot-btn");
+    btn.text("Processing...").prop("disabled", true);
+
+    let payload = {};
+    if (newName) payload.username = newName;
+    if (newAvatarUrl) {
+        let base64Img = await getBase64FromUrl(newAvatarUrl);
+        if (base64Img) payload.avatar = base64Img;
+        else alert("Failed to convert image. Trying to update username only.");
+    }
+
+    try {
+        let res = await fetch(`https://corsproxy.io/?https://discord.com/api/v10/users/@me`, {
+            method: 'PATCH',
+            headers: { 'Authorization': `Bot ${tok.token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        
+        if(res.ok) {
+            let data = await res.json();
+            tok.name = data.username;
+            localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB));
+            renderTokens();
+            alert("Bot profile updated successfully on Discord!");
+        } else {
+            let errText = await res.text();
+            alert("Discord rejected the update. (Might be rate limited or invalid image format).");
+        }
+    } catch(e) {
+        alert("Network error connecting to Discord.");
+    }
+    
+    btn.text("Push Changes to Discord").prop("disabled", false);
+    closeBotEditor();
+}
+
+
+// --- AUTO FETCH SERVERS ---
+async function loadServersForGroup() {
+    let group = $("#launch-token-group").val();
+    if(!group) return $("#target-server").html('<option value="">Select a Bot Group First...</option>');
+
+    let bots = tokensDB.filter(t => t.group === group && t.status.includes('Alive'));
+    if (bots.length === 0) {
+        return $("#target-server").html('<option value="">No active bots in this group! Go Check them.</option>');
+    }
+    
+    $("#target-server").html('<option value="">Fetching servers from Discord...</option>');
+    let token = bots[0].token; // Use the first alive bot to map servers
+
+    try {
+        let res = await fetch(`https://corsproxy.io/?https://discord.com/api/v10/users/@me/guilds`, {
+            headers: { Authorization: `Bot ${token}` }
+        });
+        if (res.ok) {
+            let guilds = await res.json();
+            if(guilds.length === 0) {
+                $("#target-server").html('<option value="">Bot is not in any servers</option>');
+            } else {
+                let options = guilds.map(g => `<option value="${g.id}">${g.name} (${g.id})</option>`).join('');
+                $("#target-server").html(options);
+            }
+        } else {
+            $("#target-server").html('<option value="">Failed to fetch servers</option>');
+        }
+    } catch(e) {
+        $("#target-server").html('<option value="">Network error fetching servers</option>');
+    }
+}
+
 
 // --- EMBED BUILDER ---
 function addEmbed() {
@@ -160,12 +280,12 @@ function addEmbed() {
     if(!n || !j) return;
     try { JSON.parse(j); } catch(e) { return alert("Invalid JSON format. Please paste valid Discord embed JSON."); }
     embedsDB.push({ name: n, json: j }); 
-    localStorage.setItem('nosify_embeds', JSON.stringify(embedsDB));
+    localStorage.setItem('nosify_dm_embeds', JSON.stringify(embedsDB));
     $("#add-embed-name, #add-embed-json").val(""); 
     renderEmbeds();
 }
 
-function deleteEmbed(i) { embedsDB.splice(i, 1); localStorage.setItem('nosify_embeds', JSON.stringify(embedsDB)); renderEmbeds(); }
+function deleteEmbed(i) { embedsDB.splice(i, 1); localStorage.setItem('nosify_dm_embeds', JSON.stringify(embedsDB)); renderEmbeds(); }
 
 function renderEmbeds() {
     let html = "", selHtml = "";
@@ -216,12 +336,12 @@ function addBlacklist() {
     let id = $("#add-blacklist-val").val().trim();
     if (!id || blacklistDB.includes(id)) return;
     blacklistDB.push(id);
-    localStorage.setItem('nosify_blacklist', JSON.stringify(blacklistDB));
+    localStorage.setItem('nosify_dm_blacklist', JSON.stringify(blacklistDB));
     $("#add-blacklist-val").val("");
     renderBlacklist();
 }
 
-function removeBlacklist(i) { blacklistDB.splice(i, 1); localStorage.setItem('nosify_blacklist', JSON.stringify(blacklistDB)); renderBlacklist(); }
+function removeBlacklist(i) { blacklistDB.splice(i, 1); localStorage.setItem('nosify_dm_blacklist', JSON.stringify(blacklistDB)); renderBlacklist(); }
 
 function renderBlacklist() {
     let html = "";
@@ -234,7 +354,7 @@ function renderBlacklist() {
 function clearSentHistory() {
     if (!confirm("Are you sure you want to clear your sent logs? This will let you DM the same users again.")) return;
     statsDB = { sent: 0, failed: 0 };
-    localStorage.setItem('nosify_stats', JSON.stringify(statsDB));
+    localStorage.setItem('nosify_dm_stats', JSON.stringify(statsDB));
     $("#terminal-output").html("Logs cleared. Ready to start.");
     $("#con-sent, #con-failed").text("0");
     $("#con-progress").css("width", "0%");
@@ -264,7 +384,7 @@ async function sendChat() {
 
 function saveProfile() {
     userProfile = { name: $("#prof-name").val(), avatar: $("#prof-img").val() };
-    localStorage.setItem('nosify_prof', JSON.stringify(userProfile)); 
+    localStorage.setItem('nosify_dm_prof', JSON.stringify(userProfile)); 
     alert("Profile Saved!");
 }
 
@@ -277,6 +397,11 @@ async function saveCloudData() {
 async function startDmall() {
     if(engineRunning) return alert("DMall is already running!");
     let group = $("#launch-token-group").val();
+    let serverId = $("#target-server").val();
+    
+    if(!group) return alert("Please select a Bot Group first.");
+    if(!serverId) return alert("Please select a Target Server.");
+    
     let bots = tokensDB.filter(t => t.group === group);
     if(bots.length === 0) return alert("There are no tokens inside that folder!");
     
@@ -288,7 +413,7 @@ async function startDmall() {
     $("#terminal-output").html("");
     $("#con-bots").text(bots.length);
     
-    logTerminalOutput(`Starting DMall using ${bots.length} bots...`, "info");
+    logTerminalOutput(`Starting DMall on Server ID [${serverId}] using ${bots.length} bots...`, "info");
     
     let total = targets.length; let sent = 0; let fail = 0;
     
@@ -316,7 +441,7 @@ async function startDmall() {
     }
     
     statsDB.sent += sent; statsDB.failed += fail;
-    localStorage.setItem('nosify_stats', JSON.stringify(statsDB)); 
+    localStorage.setItem('nosify_dm_stats', JSON.stringify(statsDB)); 
     updateStats();
     logTerminalOutput(`DMall Finished. Sent: ${sent} | Failed: ${fail}`, "win");
     engineRunning = false;
@@ -334,17 +459,4 @@ async function loadAdminKeys() {
     if(!adminPass) return;
     const res = await fetch('/api/admin', { headers: { 'Authorization': adminPass }});
     if(!res.ok) return logoutSystem();
-    const db = await res.json();
-    let html = "";
-    db.keys.forEach((k, i) => {
-        html += `<tr class="border-b border-gray-800 hover:bg-white/5 transition"><td class="py-3 px-2 text-[#6366f1] font-bold">${k.key}</td><td class="py-3 px-2 text-gray-300">${k.time}</td><td class="py-3 px-2 text-green-400 font-mono">${k.left}</td><td class="py-3 px-2 text-gray-500 font-mono text-xs opacity-80">${k.claimedBy || 'Unused'}</td></tr>`;
-    });
-    $("#adm-keys-list").html(html);
-}
-
-async function loadAdminSpyData() {
-    let res = await fetch('/api/admin?spy=true', { headers: { 'Authorization': adminPass }});
-    let data = await res.json();
-    $("#spy-content").text(JSON.stringify(data, null, 2));
-            }
-                                                                            
+            
