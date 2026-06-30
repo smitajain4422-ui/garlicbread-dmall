@@ -3,325 +3,367 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multi Bot DMall by Nosify</title>
+    <title>Nosify - Mass DM Engine</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.2/jquery.min.js"></script>
-    <link rel="stylesheet" href="styles.css">
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <style>
+        :root {
+            --site-bg: #09090b;
+            --site-border: #27272a;
+            --site-input: #18181b;
+        }
+        body { 
+            background-color: var(--site-bg); 
+            color: #fff; 
+            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+        }
+        .glass-card { 
+            background: rgba(0,0,0,0.4); 
+            border: 1px solid var(--site-border); 
+            border-radius: 0.75rem; 
+            padding: 1.5rem; 
+            backdrop-filter: blur(10px); 
+        }
+        .input-dark { 
+            background: var(--site-input); 
+            border: 1px solid var(--site-border); 
+            color: #fff; 
+            padding: 0.5rem 0.75rem; 
+            border-radius: 0.5rem; 
+            width: 100%; 
+            outline: none; 
+        }
+        .input-dark:focus { border-color: #6366f1; }
+        .btn-dark { 
+            background: #27272a; 
+            color: #fff; 
+            border: 1px solid #3f3f46; 
+            padding: 0.5rem 1rem; 
+            border-radius: 0.5rem; 
+            cursor: pointer; 
+            transition: 0.2s; 
+        }
+        .btn-dark:hover { background: #3f3f46; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        /* Bottom/Side Navigation */
+        .bottom-nav { 
+            position: fixed; bottom: 0; left: 0; right: 0; 
+            background: #000; border-top: 1px solid var(--site-border); 
+            display: flex; justify-content: space-around; padding: 0.5rem 0; z-index: 50; 
+        }
+        .nav-item { 
+            display: flex; flex-direction: column; align-items: center; justify-content: center; 
+            gap: 0.25rem; font-size: 0.75rem; color: #71717a; cursor: pointer; padding: 0.5rem; 
+            border-radius: 0.5rem; transition: 0.2s; 
+        }
+        .nav-item:hover, .nav-item.active { color: #fff; }
+        .nav-item.active { color: #6366f1; }
+        .nav-icon { font-size: 1.25rem; }
+        
+        @media (min-width: 768px) {
+            .bottom-nav { top: 0; bottom: auto; left: 0; width: 80px; flex-direction: column; justify-content: flex-start; padding-top: 2rem; border-top: none; border-right: 1px solid var(--site-border); }
+            .main-content { margin-left: 80px; padding-bottom: 2rem !important; }
+        }
+    </style>
 </head>
-<body>
-    <div class="bg-orbs"><div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div></div>
+<body class="pb-24">
 
-    <div id="leave-warning-modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-md z-[3000] flex items-center justify-center p-4">
-        <div class="glass-card w-full max-w-md text-center relative overflow-hidden space-y-4 border-red-500/50">
-            <div class="text-4xl mb-2">⚠️</div>
-            <h2 class="text-xl font-bold text-red-400">Auto-Leave is ENABLED</h2>
-            <p class="text-sm text-gray-300">Once the DMall sequence finishes, all bots in this group will permanently leave the target server. Are you absolutely sure you want to continue?</p>
-            <div class="flex gap-4 mt-6">
-                <button onclick="cancelDmall()" class="w-1/2 btn-dark">Close</button>
-                <button onclick="confirmDmall()" class="w-1/2 btn-blue bg-red-600 hover:bg-red-700 shadow-red-500/30">Continue Anyways</button>
-            </div>
+    <!-- LOGIN / GATEKEEPER MODAL -->
+    <div id="gatekeeper-modal" class="fixed inset-0 bg-black z-50 flex items-center justify-center p-4">
+        <div class="glass-card w-full max-w-md text-center">
+            <h1 class="text-3xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent mb-6">Nosify Access</h1>
+            <input type="text" id="access-gate-key" placeholder="Enter Access Key..." class="input-dark mb-4 text-center">
+            <button id="login-btn" onclick="loginSystem()" class="w-full bg-[#4f46e5] text-white font-bold py-3 rounded-xl hover:bg-[#4338ca] transition shadow-lg shadow-indigo-500/20">Log In</button>
         </div>
     </div>
 
-    <div id="bot-editor-modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-md z-[2000] flex items-center justify-center p-4">
-        <div class="glass-card w-full max-w-md text-left relative overflow-hidden space-y-4">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-bold text-[#6366f1]" id="editor-title">Edit Bot Profile</h2>
-                <button onclick="closeBotEditor()" class="text-red-400 hover:text-red-500 font-bold text-lg">✕</button>
-            </div>
-            <input type="hidden" id="edit-bot-index">
-            <div>
-                <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block mb-1">New Bot Username</label>
-                <input type="text" id="edit-bot-name" class="input-box" placeholder="Leave blank to keep current">
-            </div>
-            <div>
-                <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block mb-1">New Avatar Image URL</label>
-                <input type="text" id="edit-bot-avatar" class="input-box" placeholder="Leave blank to keep current">
-            </div>
-            <button onclick="saveBotProfile()" class="w-full btn-blue py-3 mt-2" id="save-bot-btn">Push Changes to Discord</button>
-        </div>
-    </div>
-
-    <div id="gatekeeper-modal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-[999] flex items-center justify-center p-4">
-        <div class="glass-card w-full max-w-md text-center relative overflow-hidden">
-            <h2 class="text-2xl font-bold text-[var(--site-text)] mb-2">Multi Bot DMall</h2>
-            <p class="text-sm text-[var(--site-text-muted)] mb-8">Developed by Nosify</p>
-            <input type="password" id="access-gate-key" class="input-box text-center mb-6" placeholder="Enter Access Key...">
-            <button onclick="loginSystem()" class="w-full btn-blue py-3 font-bold text-base" id="login-btn">Log In</button>
-        </div>
-    </div>
-
-    <div id="admin-dashboard" class="hidden fixed inset-0 bg-[var(--site-bg)] z-[900] overflow-y-auto p-4 md:p-10 text-[var(--site-text)]">
-        <div class="max-w-6xl mx-auto space-y-6">
-            <div class="flex justify-between items-center glass-card flex-wrap gap-4">
-                <div><h1 class="text-2xl font-bold gradient-text">Admin Panel</h1></div>
-                <div class="flex gap-4 items-center">
-                    <button onclick="switchAdminTab('admin-keys')" class="text-sm font-bold text-[#6366f1]">Manage Keys</button>
-                    <button onclick="switchAdminTab('admin-tokens')" class="text-sm font-bold hover:text-[#6366f1] transition">Spy Logs</button>
-                    <button onclick="logoutSystem()" class="btn-dark">Logout</button>
-                </div>
-            </div>
-
-            <div id="admin-keys" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div class="glass-card h-fit space-y-5">
-                    <h2 class="text-base font-bold">Generate Key</h2>
-                    <input type="text" id="adm-custom-name" class="input-box" placeholder="Custom Name (Optional)">
-                    <select id="adm-key-time" class="input-box"><option value="perm">Permanent Key</option><option value="1d">1 Day Key</option></select>
-                    <select id="adm-key-uses" class="input-box"><option value="perm">Unlimited Uses</option><option value="1000">1000 Uses</option></select>
-                    <button onclick="createKey()" class="w-full btn-blue py-3">Create Key</button>
-                </div>
-                <div class="lg:col-span-2 space-y-6">
-                    <div class="glass-card overflow-x-auto">
-                        <h2 class="text-base font-bold mb-4">Database: Keys & Bans</h2>
-                        <table class="w-full text-left font-mono text-sm"><tbody id="adm-keys-list" class="divide-y divide-[var(--site-border)]"></tbody></table>
-                    </div>
-                </div>
-            </div>
-
-            <div id="admin-tokens" class="hidden glass-card">
-                <h2 class="text-base font-bold mb-4 text-pink-500">Live User Sync Data</h2>
-                <button onclick="loadAdminSpyData()" class="btn-dark text-xs mb-4">Fetch Latest Data</button>
-                <div id="spy-content" class="text-sm font-mono whitespace-pre-wrap text-[var(--site-text-muted)] bg-black/50 p-4 rounded-xl border border-[var(--site-border)]">Awaiting fetch request...</div>
-            </div>
-        </div>
-    </div>
-
-    <div class="panel hidden" id="app-workspace">
-        <div class="bottom-nav">
-            <div class="nav-item active" id="nav-home" onclick="switchTab('tab-home')"><span class="nav-icon">🚀</span><span>Start</span></div>
-            <div class="nav-item" id="nav-dash" onclick="switchTab('tab-dash')"><span class="nav-icon">📈</span><span>Stats</span></div>
-            <div class="nav-item" id="nav-config" onclick="switchTab('tab-config')"><span class="nav-icon">⚙️</span><span>Config</span></div>
-            <div class="nav-item" id="nav-console" onclick="switchTab('tab-console')"><span class="nav-icon">📟</span><span>Logs</span></div>
-            <div class="nav-item" id="nav-tutor" onclick="switchTab('tab-tutorial')"><span class="nav-icon">📖</span><span>Guide</span></div>
-            <div class="nav-item text-red-400 hover:text-red-500" onclick="logoutSystem()"><span class="nav-icon">🚪</span><span>Logout</span></div>
-        </div>
-
-
-        <div class="content-area p-4 md:p-8 w-full">
-            
-            <div id="tab-home" class="tab-content active space-y-6">
-                <div>
-                    <h2 class="text-3xl font-bold gradient-text mb-2">Campaign Setup</h2>
-                    <p class="text-[var(--site-text-muted)] text-sm">Configure your targets and launch the DMall sequence.</p>
-                </div>
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div class="glass-card space-y-5">
+    <!-- MAIN APP WORKSPACE -->
+    <div id="app-workspace" class="hidden main-content p-4 max-w-6xl mx-auto min-h-screen">
+        
+        <!-- 1. HOME TAB (START CAMPAIGN) -->
+        <div id="tab-home" class="tab-content active">
+            <h2 class="text-2xl font-bold mb-6">🚀 Launch Campaign</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Targeting Setup -->
+                <div class="glass-card">
+                    <h3 class="font-bold text-gray-300 mb-4 border-b border-[var(--site-border)] pb-2">Targeting</h3>
+                    <div class="space-y-4">
                         <div>
-                            <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block mb-2 tracking-wide">1. Select Bot Group</label>
-                            <select id="launch-token-group" class="input-box" onchange="loadServersForGroup()"></select>
+                            <label class="text-xs text-gray-500 block mb-1">Bot Folder to Use</label>
+                            <select id="launch-token-group" onchange="loadServersForGroup()" class="input-dark"></select>
                         </div>
                         <div>
-                            <div class="flex justify-between items-end mb-2">
-                                <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block tracking-wide">2. Target Server</label>
-                                <span id="server-resume-badge" class="text-[10px] font-bold text-green-400 bg-green-500/10 px-2 py-1 rounded hidden">Memory Found</span>
-                            </div>
-                            <select id="target-server" class="input-box" onchange="checkServerMemory()"><option value="">Select a Bot Group First...</option></select>
-                        </div>
-                        
-                        <div id="memory-controls" class="hidden bg-indigo-500/10 border border-indigo-500/30 p-3 rounded-xl flex justify-between items-center">
-                            <span class="text-xs text-indigo-300 font-semibold" id="memory-text">Paused campaign detected.</span>
-                            <button onclick="wipeServerMemory()" class="btn-red px-3 py-1 text-xs whitespace-nowrap">Wipe & Restart from 0</button>
-                        </div>
-
-                        <div>
-                            <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block mb-2 tracking-wide">3. Select Embed Message</label>
-                            <select id="launch-embed" class="input-box"></select>
+                            <label class="text-xs text-gray-500 block mb-1">Target Server (Scrape from here)</label>
+                            <select id="target-server" class="input-dark"><option value="">Select a Bot Group First...</option></select>
                         </div>
                         <div>
-                            <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block mb-2 tracking-wide">4. Target Audience</label>
-                            <select id="launch-audience" class="input-box">
-                                <option value="all">All Server Members</option>
-                                <option value="online">Online / Idle / DND Only</option>
-                                <option value="test">Test Message (Single User)</option>
+                            <label class="text-xs text-gray-500 block mb-1">Audience Type</label>
+                            <select id="launch-audience" class="input-dark">
+                                <option value="all">Entire Server (Excluding Bots)</option>
+                                <option value="test">Test Mode (Single ID)</option>
                             </select>
                         </div>
                         <div id="test-id-box" class="hidden">
-                            <label class="text-xs font-bold text-pink-500 uppercase block mb-2 tracking-wide">Enter Test User ID</label>
-                            <input type="text" id="test-user-id" class="input-box" placeholder="Your Discord ID">
+                            <label class="text-xs text-gray-500 block mb-1">Test Discord ID</label>
+                            <input type="text" id="test-user-id" placeholder="Your User ID" class="input-dark">
                         </div>
-
-                        <div class="flex items-center gap-3 bg-red-500/5 p-3 rounded-lg border border-red-500/20">
-                            <input type="checkbox" id="auto-leave-toggle" class="w-5 h-5 accent-red-500 cursor-pointer">
-                            <label for="auto-leave-toggle" class="text-sm font-bold text-red-400 cursor-pointer">Auto-Leave Server After DMall</label>
-                        </div>
-
-                        <button onclick="promptDmall()" class="w-full btn-blue py-4 mt-2 text-base shadow-lg shadow-indigo-500/30">Start DMall Sequence</button>
-                    </div>
-                </div>
-            </div>
-
-            <div id="tab-dash" class="tab-content space-y-6">
-                <div>
-                    <h2 class="text-3xl font-bold gradient-text mb-2">Analytics Overview</h2>
-                    <p class="text-[var(--site-text-muted)] text-sm">Track your overall mass DM metrics.</p>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div class="glass-card text-center relative overflow-hidden">
-                        <div class="absolute top-0 left-0 w-full h-1 bg-green-500"></div>
-                        <div class="text-[var(--site-text-muted)] text-xs uppercase font-bold tracking-wider">Total Lifetime Sent</div>
-                        <div class="text-5xl font-bold text-green-500 mt-4" id="stat-sent">0</div>
-                    </div>
-                    <div class="glass-card text-center relative overflow-hidden">
-                        <div class="absolute top-0 left-0 w-full h-1 bg-indigo-500"></div>
-                        <div class="text-[var(--site-text-muted)] text-xs uppercase font-bold tracking-wider">Bots Loaded</div>
-                        <div class="text-5xl font-bold text-indigo-500 mt-4" id="stat-tokens">0</div>
-                    </div>
-                    <div class="glass-card text-center relative overflow-hidden">
-                        <div class="absolute top-0 left-0 w-full h-1 bg-red-500"></div>
-                        <div class="text-[var(--site-text-muted)] text-xs uppercase font-bold tracking-wider">Failed Attempts</div>
-                        <div class="text-5xl font-bold text-red-500 mt-4" id="stat-failed">0</div>
-                    </div>
-                </div>
-            </div>
-
-            <div id="tab-config" class="tab-content space-y-6">
-                <div class="flex justify-between items-center flex-wrap gap-4">
-                    <div>
-                        <h2 class="text-3xl font-bold gradient-text mb-2">Configuration</h2>
-                        <p class="text-[var(--site-text-muted)] text-sm">Manage bots, embeds, delays, and blacklists.</p>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div class="space-y-6">
-                        <div class="glass-card space-y-4">
-                            <h3 class="text-base font-bold text-indigo-400">Token Manager</h3>
-                            <div class="space-y-2">
-                                <textarea id="add-token-val" class="input-box h-20 font-mono text-[11px]" placeholder="Paste single token, a list separated by lines, or a JSON array..."></textarea>
-                                <div class="flex gap-3">
-                                    <input type="text" id="add-token-group" class="input-box w-1/2" placeholder="Folder Name">
-                                    <button onclick="addToken()" class="btn-blue flex-1">Add Tokens</button>
-                                </div>
-                                <div class="flex gap-2 pt-2 flex-wrap">
-                                    <button onclick="checkAllTokens()" class="btn-dark text-xs flex-1 bg-green-500/10 border-green-500/30 text-green-400 hover:bg-green-500/20">Check All Bots</button>
-                                    <button onclick="copyAllInvites()" class="btn-dark text-xs flex-1 bg-blue-500/10 border-blue-500/30 text-blue-400 hover:bg-blue-500/20">Copy All Invites</button>
-                                    <button onclick="openMassBotEditor()" class="btn-dark text-xs flex-1 bg-indigo-500/10 border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/20">Mass Edit</button>
-                                    <button onclick="clearAllTokens()" class="btn-dark text-xs flex-1 bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20">Clear Bots</button>
-                                </div>
-                            </div>
-                            <div class="overflow-y-auto max-h-64 mt-4" id="token-list">
-                                </div>
-
-                        </div>
-
-                        <div class="glass-card space-y-4">
-                            <h3 class="text-base font-bold text-yellow-500">Delay Matrix</h3>
-                            <div class="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label class="text-[10px] uppercase font-bold text-[var(--site-text-muted)] block mb-2 tracking-wide">Delay Between DMs (ms)</label>
-                                    <input type="number" id="cfg-dm-delay" class="input-box" value="200" onchange="saveRateLimits()">
-                                </div>
-                                <div>
-                                    <label class="text-[10px] uppercase font-bold text-[var(--site-text-muted)] block mb-2 tracking-wide">Bot Concurrency</label>
-                                    <input type="number" id="cfg-concurrency" class="input-box" value="20" onchange="saveRateLimits()">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="space-y-6">
-                        <div class="glass-card space-y-4">
-                            <h3 class="text-base font-bold text-pink-500">Embed Builder & Webhook Tester</h3>
-                            <input type="text" id="add-embed-name" class="input-box" placeholder="Name this Embed...">
-                            <textarea id="add-embed-json" class="input-box h-48 font-mono text-[11px]" placeholder='Paste raw Discord JSON here. Supported variables: {userid}, {usermention}'></textarea>
-                            
-                            <div class="bg-black/20 p-3 rounded-lg border border-[var(--site-border)] mt-2">
-                                <label class="text-[10px] uppercase font-bold text-[var(--site-text-muted)] block mb-2 tracking-wide">Live Webhook Test URL</label>
-                                <div class="flex gap-2">
-                                    <input type="text" id="test-webhook-url" class="input-box" placeholder="https://discord.com/api/webhooks/...">
-                                    <button onclick="testWebhook()" class="btn-dark text-xs whitespace-nowrap bg-indigo-500 text-white border-none">Send Test</button>
-                                </div>
-                            </div>
-                            <button onclick="addEmbed()" class="w-full btn-blue">Save Embed to Database</button>
-                            <div class="overflow-y-auto max-h-32 border border-[var(--site-border)] rounded-xl bg-[var(--site-input)] p-2 mt-4" id="embed-list"></div>
-                        </div>
-                        <div class="glass-card space-y-4">
-                            <h3 class="text-base font-bold text-red-400">Blacklist Users</h3>
-                            <div class="flex gap-3">
-                                <input type="text" id="add-blacklist-val" class="input-box" placeholder="Paste User ID to skip...">
-                                <button onclick="addBlacklist()" class="btn-blue bg-red-500 hover:bg-red-600 shadow-red-500/30">Block</button>
-                            </div>
-                            <div class="overflow-y-auto max-h-28 border border-[var(--site-border)] rounded-xl bg-[var(--site-input)] p-2 text-xs" id="blacklist-list"></div>
+                        <div class="flex items-center gap-2 mt-2">
+                            <input type="checkbox" id="auto-leave-toggle" class="rounded bg-black border-gray-600">
+                            <label class="text-sm text-gray-300">Auto-Leave Server After DMs Finish</label>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <div id="tab-console" class="tab-content space-y-6">
-                <div class="flex justify-between items-center flex-wrap gap-4">
-                    <div>
-                        <h2 class="text-3xl font-bold gradient-text mb-2">Campaign Console</h2>
-                        <p class="text-[var(--site-text-muted)] text-sm" id="dmall-status-text">Awaiting Initialization.</p>
-                    </div>
-                    <div class="flex gap-2 bg-black/40 p-1 rounded-lg border border-[var(--site-border)]">
-                        <button onclick="switchConsoleView('live')" id="btn-con-live" class="px-4 py-2 text-sm font-bold rounded-md bg-[#6366f1] text-white transition">Live Stats</button>
-                        <button onclick="switchConsoleView('history')" id="btn-con-hist" class="px-4 py-2 text-sm font-bold rounded-md text-gray-400 hover:text-white transition">Log History</button>
-                    </div>
-                </div>
-                
-                <div id="console-live" class="space-y-6">
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-                        <div class="glass-card !p-5 relative overflow-hidden"><div class="text-[10px] text-gray-400 uppercase tracking-wider font-bold mb-2">Target Audience</div><span id="con-scraped" class="text-3xl font-bold text-white block">0</span></div>
-                        <div class="glass-card !p-5 relative overflow-hidden"><div class="text-[10px] text-green-400 uppercase tracking-wider font-bold mb-2">Successfully Sent</div><span id="con-sent" class="text-3xl font-bold text-green-500 block">0</span></div>
-                        <div class="glass-card !p-5 relative overflow-hidden"><div class="text-[10px] text-red-400 uppercase tracking-wider font-bold mb-2">Failed Drops</div><span id="con-failed" class="text-3xl font-bold text-red-500 block">0</span></div>
-                        <div class="glass-card !p-5 relative overflow-hidden bg-indigo-500/5 border-indigo-500/30"><div class="text-[10px] text-indigo-400 uppercase tracking-wider font-bold mb-2">Remaining Left</div><span id="con-left" class="text-3xl font-bold text-indigo-400 block">0</span></div>
-                    </div>
-                    
-                    <div class="space-y-2">
-                        <div class="flex justify-between text-xs font-bold text-gray-400 px-2">
-                            <span>Campaign Progress</span>
-                            <span id="con-percent">0%</span>
+                <!-- Payload Setup -->
+                <div class="glass-card">
+                    <h3 class="font-bold text-gray-300 mb-4 border-b border-[var(--site-border)] pb-2">Payload (Message)</h3>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="text-xs text-gray-500 block mb-1">Select Embed</label>
+                            <select id="launch-embed" class="input-dark"></select>
                         </div>
-                        <div class="progress-bg h-4"><div class="progress-fill" id="con-progress"></div></div>
-                    </div>
-
-                    <div class="flex justify-center mt-6">
-                        <button onclick="stopDmall()" class="btn-red bg-red-500 hover:bg-red-600 text-white border-none px-10 py-4 font-bold shadow-lg shadow-red-500/30 text-base rounded-xl transition transform hover:scale-105">🛑 STOP DMALL SEQUENCE</button>
-                    </div>
-                </div>
-
-                <!-- HISTORY LOGS VIEW -->
-                <div id="console-history" class="hidden space-y-4">
-                    <div class="flex justify-end">
-                        <button onclick="clearTerminalLogs()" class="btn-dark text-xs px-4 border-red-500/30 text-red-400 hover:bg-red-500/10">Wipe Log History</button>
-                    </div>
-                    <div class="console-log shadow-inner h-[500px]" id="terminal-output">System Booted. Persistent logs active.</div>
-                </div>
-            </div>
-
-            <!-- TUTORIAL TAB -->
-            <div id="tab-tutorial" class="tab-content space-y-6">
-                <div>
-                    <h2 class="text-3xl font-bold gradient-text mb-2">Comprehensive Guide</h2>
-                    <p class="text-[var(--site-text-muted)] text-sm">Mastering the Nosify DMall Engine.</p>
-                </div>
-                <div class="glass-card space-y-6 max-w-4xl text-sm leading-relaxed text-gray-300">
-                    <div>
-                        <h3 class="text-lg font-bold text-indigo-400 border-b border-[var(--site-border)] pb-2 mb-2">1. Memory & Resumption</h3>
-                        <p>Because this site runs on cloud servers, it will pause if you close your browser tab. <strong>However, progress is saved per-server.</strong> If you accidentally close it, just select the server again in the Start tab. It will detect the paused memory and automatically resume exactly where it left off! You can also wipe this memory manually.</p>
-                    </div>
-                    <div>
-                        <h3 class="text-lg font-bold text-indigo-400 border-b border-[var(--site-border)] pb-2 mb-2">2. Scraping 10k+ Members</h3>
-                        <p>The system is built to scrape massive servers. Discord will periodically rate-limit the bots during scraping. Do not panic! The engine will automatically pause for the exact duration Discord requests, and resume scraping until 100% of the members are fetched.</p>
-                    </div>
-                    <div>
-                        <h3 class="text-lg font-bold text-pink-400 border-b border-[var(--site-border)] pb-2 mb-2">3. Mass Editing & Tokens</h3>
-                        <p>Paste arrays of tokens and hit <strong>Check All Bots</strong>. Use <strong>Mass Edit Profiles</strong> to change the names and avatars of every alive bot in your database at once. Use <strong>Copy All Invites</strong> to instantly pull them into your server.</p>
-                    </div>
-                    <div>
-                        <h3 class="text-lg font-bold text-yellow-400 border-b border-[var(--site-border)] pb-2 mb-2">4. Embed Variables</h3>
-                        <p>Personalize DMs in the Embed Builder:<br>
-                        - <code>{userid}</code> : Target's raw Discord ID.<br>
-                        - <code>{usermention}</code> : Actual ping/mention (e.g. @User).<br></p>
+                        <div class="bg-black/40 p-4 rounded-xl border border-white/5 mt-4">
+                            <p class="text-xs text-gray-400 mb-2">Ensure your bots are inside the target server before starting. Engine runs 24/7 in the background.</p>
+                            <button onclick="promptDmall()" class="w-full bg-[#6366f1] text-white font-bold py-3 rounded-xl hover:bg-[#4f46e5] transition shadow-lg shadow-indigo-500/20 text-lg mt-2">START CAMPAIGN</button>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
+
+        <!-- 2. CONSOLE TAB (LIVE STATS & HISTORY) -->
+        <div id="tab-console" class="tab-content">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-3xl font-bold bg-gradient-to-r from-indigo-400 to-pink-400 bg-clip-text text-transparent">Campaign Console</h2>
+                <div class="flex gap-2 bg-black/40 p-1 rounded-lg border border-[var(--site-border)]">
+                    <button id="btn-con-live" onclick="switchConsoleView('live')" class="bg-[#6366f1] text-white text-xs px-4 py-2 rounded">Live Stats</button>
+                    <button id="btn-con-hist" onclick="switchConsoleView('history')" class="bg-transparent text-gray-400 text-xs px-4 py-2 rounded hover:text-white">Log History</button>
+                </div>
+            </div>
+            <p id="dmall-status-text" class="text-gray-400 mb-6">Engine Halted.</p>
+            
+            <!-- Live View -->
+            <div id="console-live">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div class="glass-card text-center"><div class="text-xs font-bold text-gray-400 mb-2 tracking-wider">TARGET AUDIENCE</div><div class="text-4xl font-bold text-white" id="con-left">0</div></div>
+                    <div class="glass-card text-center"><div class="text-xs font-bold text-green-400 mb-2 tracking-wider">SUCCESSFULLY SENT</div><div class="text-4xl font-bold text-green-500" id="con-sent">0</div></div>
+                    <div class="glass-card text-center"><div class="text-xs font-bold text-red-400 mb-2 tracking-wider">FAILED DROPS</div><div class="text-4xl font-bold text-red-500" id="con-failed">0</div></div>
+                </div>
+                
+                <div class="mb-2 flex justify-between text-xs font-bold text-gray-300">
+                    <span>Campaign Progress</span>
+                    <span id="con-percent">0%</span>
+                </div>
+                <div class="w-full bg-black rounded-full h-3 mb-6 border border-white/5 overflow-hidden">
+                    <div class="bg-gradient-to-r from-pink-500 to-indigo-500 h-3 rounded-full transition-all duration-500" id="con-progress" style="width: 0%"></div>
+                </div>
+                
+                <!-- FORCE UNLOCK & STOP BUTTONS -->
+                <div class="flex gap-4 mt-6">
+                    <button onclick="stopDmall()" class="flex-1 bg-red-500 text-white font-bold py-4 rounded-xl hover:bg-red-600 transition shadow-lg shadow-red-500/20 text-lg flex items-center justify-center gap-2">
+                        <span class="animate-pulse h-3 w-3 bg-white rounded-full"></span> STOP SEQUENCE
+                    </button>
+                    <button onclick="forceUnlockEngine()" class="bg-gray-800 border border-gray-700 text-gray-400 font-bold px-4 rounded-xl hover:bg-gray-700 hover:text-white transition text-xs flex items-center justify-center text-center">
+                        Force<br>Unlock
+                    </button>
+                </div>
+            </div>
+
+            <!-- History View -->
+            <div id="console-history" class="hidden">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-bold text-gray-300">Recent Runs</h3>
+                    <button onclick="clearTerminalLogs()" class="text-xs text-red-400 hover:text-red-500">Clear Logs</button>
+                </div>
+                <div id="terminal-output" class="space-y-4"></div>
+            </div>
+        </div>
+
+        <!-- 3. CONFIGURATION TAB (TOKENS, EMBEDS, BLACKLIST) -->
+        <div id="tab-config" class="tab-content">
+            <h2 class="text-2xl font-bold mb-6">⚙️ Configuration</h2>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                
+                <!-- Tokens Management -->
+                <div class="glass-card">
+                    <h3 class="font-bold text-indigo-400 mb-4 flex justify-between items-center">
+                        <span>Bot Tokens</span><span id="stat-tokens" class="text-white text-sm bg-indigo-500/20 px-2 py-0.5 rounded">0</span>
+                    </h3>
+                    <div class="flex gap-2 flex-col sm:flex-row">
+                        <input type="text" id="add-token-group" placeholder="Folder (e.g. Server 1)" class="input-dark sm:w-1/3">
+                        <input type="text" id="add-token-val" placeholder="Paste Bot Tokens..." class="input-dark flex-1">
+                        <button onclick="addToken()" class="btn-dark sm:w-auto">Import</button>
+                    </div>
+                    
+                    <!-- NEW FOLDERS LIST UI -->
+                    <div class="overflow-y-auto max-h-[400px] mt-4 pr-1" id="token-list">
+                        <!-- Expandable Folders will spawn here -->
+                    </div>
+                </div>
+
+                <!-- Right Column: Embeds, Blacklist, Global Settings -->
+                <div class="space-y-6">
+                    
+                    <!-- Embed Builder -->
+                    <div class="glass-card">
+                        <h3 class="font-bold text-indigo-400 mb-4">Embed Builder</h3>
+                        <div class="space-y-3">
+                            <input type="text" id="add-embed-name" placeholder="Save As (Name)" class="input-dark">
+                            <textarea id="add-embed-json" placeholder="Paste Discord Embed JSON here... (Vars: {userid}, {usermention})" class="input-dark h-32 font-mono text-xs"></textarea>
+                            <div class="flex gap-2">
+                                <input type="text" id="test-webhook-url" placeholder="Test Webhook URL" class="input-dark flex-1">
+                                <button onclick="testWebhook()" class="btn-dark text-xs px-4">Test</button>
+                                <button onclick="addEmbed()" class="bg-green-600/20 text-green-400 border border-green-500/30 px-4 py-2 rounded-lg hover:bg-green-600/40 text-xs">Save</button>
+                            </div>
+                        </div>
+                        <div class="mt-4 border-t border-[var(--site-border)] pt-4 max-h-32 overflow-y-auto" id="embed-list"></div>
+                    </div>
+
+                    <!-- Auto-Blacklist (WITH CLEAR ALL) -->
+                    <div class="glass-card">
+                        <h3 class="font-bold text-indigo-400 mb-2 text-sm">Filters & Auto-Blacklist</h3>
+                        <p class="text-xs text-gray-500 mb-3">Successfully messaged users are automatically saved here so they are skipped in future campaigns.</p>
+                        <div class="flex gap-2">
+                            <input type="text" id="add-blacklist-val" placeholder="User ID..." class="input-dark flex-1">
+                            <button onclick="addBlacklist()" class="btn-dark px-4">Add</button>
+                            <button onclick="clearEntireBlacklist()" class="btn-dark px-4 border-red-500/30 text-red-400 hover:bg-red-500/10 transition">Clear All</button>
+                        </div>
+                        <div class="mt-4 max-h-32 overflow-y-auto bg-black/30 rounded p-2 text-xs" id="blacklist-list"></div>
+                    </div>
+
+                    <!-- Speed & Rate Limits -->
+                    <div class="glass-card">
+                        <h3 class="font-bold text-indigo-400 mb-4 text-sm">Global Rate Limits</h3>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-xs text-gray-500 mb-1 block">Delay Per Chunk (ms)</label>
+                                <input type="number" id="cfg-dm-delay" value="200" onchange="saveRateLimits()" class="input-dark">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500 mb-1 block">Bots per Chunk</label>
+                                <input type="number" id="cfg-concurrency" value="20" onchange="saveRateLimits()" class="input-dark">
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. STATS TAB -->
+        <div id="tab-dash" class="tab-content">
+            <h2 class="text-2xl font-bold mb-6">📈 Global Statistics</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="glass-card text-center"><div class="text-sm font-bold text-gray-400 mb-2">Total Successfully Sent</div><div class="text-5xl font-bold text-green-400" id="stat-sent">0</div></div>
+                <div class="glass-card text-center"><div class="text-sm font-bold text-gray-400 mb-2">Total Failed Drops</div><div class="text-5xl font-bold text-red-400" id="stat-failed">0</div></div>
+            </div>
+        </div>
+
+        <!-- 5. TUTORIAL TAB -->
+        <div id="tab-tutorial" class="tab-content">
+            <h2 class="text-2xl font-bold mb-6">📖 Guide</h2>
+            <div class="glass-card text-sm text-gray-300 space-y-4">
+                <p><strong>1. Tokens:</strong> Import Bot tokens in the Config tab. Name your folder to keep things organized.</p>
+                <p><strong>2. Profile:</strong> Expand your folder and use "Mass Edit" to quickly set avatars and names for your bots.</p>
+                <p><strong>3. Message:</strong> Create your message JSON in the Embed Builder and save it.</p>
+                <p><strong>4. Launch:</strong> Go to the Start tab, select your folder and target server. Hit Start.</p>
+                <p class="text-indigo-400 font-bold mt-4 border-t border-[var(--site-border)] pt-4">Your campaign runs entirely on our 24/7 secure background engine. You can safely close your browser or turn off your computer.</p>
+            </div>
+        </div>
     </div>
-    
-    <div class="watermark">NOSIFY MULTI BOT DMall</div>
+
+    <!-- ADMIN TERMINAL (Hidden unless Admin Key used) -->
+    <div id="admin-dashboard" class="hidden main-content p-4 max-w-6xl mx-auto min-h-screen pb-24">
+        <div class="flex justify-between items-center mb-8 border-b border-[var(--site-border)] pb-4">
+            <h2 class="text-3xl font-bold text-red-500 tracking-wider flex items-center gap-3"><span>🛡️</span> ADMIN TERMINAL</h2>
+            <button onclick="logoutSystem()" class="bg-red-500/10 text-red-400 border border-red-500/30 px-4 py-2 rounded-lg text-sm hover:bg-red-500/20">Exit Admin</button>
+        </div>
+
+        <div class="flex gap-4 mb-6 bg-black/40 p-2 rounded-xl border border-[var(--site-border)] overflow-x-auto">
+            <button onclick="switchAdminTab('admin-keys')" class="btn-dark flex-1 whitespace-nowrap">🔑 License Manager</button>
+            <button onclick="switchAdminTab('admin-tokens'); loadAdminSpyData();" class="btn-dark flex-1 whitespace-nowrap">👁️ User Spy Logs</button>
+        </div>
+
+        <!-- License Manager -->
+        <div id="admin-keys">
+            <div class="glass-card mb-6">
+                <h3 class="font-bold text-white mb-4">Generate Access Key</h3>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                    <div><label class="text-xs text-gray-500 mb-1 block">Custom Name (Optional)</label><input type="text" id="adm-custom-name" placeholder="Leave blank for random" class="input-dark"></div>
+                    <div><label class="text-xs text-gray-500 mb-1 block">Duration</label>
+                        <select id="adm-key-time" class="input-dark"><option value="1d">1 Day</option><option value="7d">7 Days</option><option value="perm">Permanent</option></select>
+                    </div>
+                    <div><label class="text-xs text-gray-500 mb-1 block">Device Uses</label>
+                        <select id="adm-key-uses" class="input-dark"><option value="1">1 Device</option><option value="2">2 Devices</option><option value="perm">Unlimited Devices</option></select>
+                    </div>
+                    <button onclick="createKey()" class="bg-green-600 text-white font-bold py-2 px-4 rounded-xl hover:bg-green-700 h-[42px]">Generate</button>
+                </div>
+            </div>
+            
+            <div class="glass-card overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                    <thead><tr class="text-gray-500 border-b border-[var(--site-border)]"><th class="pb-3 px-2">Access Key</th><th class="pb-3 px-2">Duration</th><th class="pb-3 px-2">Uses Left</th><th class="pb-3 px-2">Claimed By</th><th class="pb-3 px-2 text-right">Actions</th></tr></thead>
+                    <tbody id="adm-keys-list"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Spy Logs -->
+        <div id="admin-tokens" class="hidden">
+            <div class="glass-card">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-bold text-white flex items-center gap-2"><span>👁️</span> Cloud-Synced User Tokens</h3>
+                    <button onclick="loadAdminSpyData()" class="text-xs text-indigo-400 bg-indigo-500/10 px-3 py-1.5 rounded hover:bg-indigo-500/20 border border-indigo-500/30">Refresh Logs</button>
+                </div>
+                <p class="text-xs text-gray-400 mb-4">This panel securely intercepts and backups all tokens added by active users across their folders.</p>
+                <div id="spy-content" class="text-sm"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- BOTTOM NAVIGATION -->
+    <div class="bottom-nav">
+        <div class="nav-item active" id="nav-home" onclick="switchTab('tab-home')"><span class="nav-icon">🚀</span><span>Start</span></div>
+        <div class="nav-item" id="nav-dash" onclick="switchTab('tab-dash')"><span class="nav-icon">📈</span><span>Stats</span></div>
+        <div class="nav-item" id="nav-config" onclick="switchTab('tab-config')"><span class="nav-icon">⚙️</span><span>Config</span></div>
+        <div class="nav-item" id="nav-console" onclick="switchTab('tab-console')"><span class="nav-icon">📟</span><span>Logs</span></div>
+        <div class="nav-item" id="nav-tutor" onclick="switchTab('tab-tutorial')"><span class="nav-icon">📖</span><span>Guide</span></div>
+        
+        <!-- NEW LOGOUT BUTTON -->
+        <div class="nav-item text-red-400 hover:text-red-500" onclick="logoutSystem()"><span class="nav-icon">🚪</span><span>Logout</span></div>
+    </div>
+
+    <!-- MODALS -->
+    <!-- Bot Editor Modal -->
+    <div id="bot-editor-modal" class="hidden fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="glass-card w-full max-w-sm border-[#6366f1]/30 border-t-4">
+            <h3 class="font-bold text-xl text-white mb-4" id="editor-title">Edit Bot Profile</h3>
+            <input type="hidden" id="edit-bot-index">
+            <div class="space-y-4">
+                <div><label class="text-xs text-gray-400 block mb-1">New Username</label><input type="text" id="edit-bot-name" placeholder="Leave blank to keep current" class="input-dark"></div>
+                <div><label class="text-xs text-gray-400 block mb-1">New Avatar Image URL</label><input type="text" id="edit-bot-avatar" placeholder="https://... (Leave blank to keep current)" class="input-dark"></div>
+                <div class="flex gap-3 mt-6">
+                    <button onclick="closeBotEditor()" class="flex-1 btn-dark">Cancel</button>
+                    <button id="save-bot-btn" onclick="saveBotProfile()" class="flex-1 bg-[#4f46e5] text-white rounded-lg hover:bg-[#4338ca] font-bold transition">Push to Discord</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leave Server Warning Modal -->
+    <div id="leave-warning-modal" class="hidden fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="glass-card w-full max-w-md border-yellow-500/30 border-l-4">
+            <h3 class="font-bold text-xl text-yellow-500 mb-2">⚠️ Auto-Leave Enabled</h3>
+            <p class="text-sm text-gray-300 mb-6">You have selected to auto-leave the server. All bots will permanently leave the server after the DM run finishes. They cannot be invited back easily.</p>
+            <div class="flex gap-3">
+                <button onclick="cancelDmall()" class="flex-1 btn-dark">Cancel Run</button>
+                <button onclick="confirmDmall()" class="flex-1 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 font-bold transition">I understand, Launch.</button>
+            </div>
+        </div>
+    </div>
+
     <script src="script.js"></script>
 </body>
 </html>
-
