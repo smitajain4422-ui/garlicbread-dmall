@@ -67,12 +67,15 @@ window.onload = () => {
                     body: JSON.stringify({ action: 'verify_key', key: activeKey })
                 });
                 let data = await res.json();
-                if (!data.valid) {
+                
+                // STRICT CHECK: Only kick if the server specifically confirms the key is dead
+                if (data && data.valid === false) {
                     alert("Your access key has expired or was revoked. You have been logged out.");
                     logoutSystem();
                 }
-            } catch (e) {}
+            } catch (e) {} // Ignore random internet/database drops without logging them out
         }, 60000);
+
     }
 };
 
@@ -504,8 +507,12 @@ async function loadAdminKeys() {
 
 // SPY LOGS WITH FOLDERS & DELETED HISTORY
 async function loadAdminSpyData() {
-    let res = await fetch('/api/admin?spy=true', { headers: { 'Authorization': adminPass }});
+    let res = await fetch('/api/app', { 
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'get_spy_data' })
+    });
     let db = await res.json();
+
     
     let html = "";
     let cloud = db.cloudData || {};
