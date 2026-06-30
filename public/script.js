@@ -395,7 +395,7 @@ async function executeDmall() {
                         let rateData = await res.json();
                         let waitMs = (rateData.retry_after * 1000) || 2500;
                         logTerminalOutput(`Hit Discord Scraping Rate Limit! Cooling down for ${Math.ceil(waitMs/1000)} seconds...`, "err");
-                        await new Promise(r => setTimeout(r, waitMs));
+                        await backgroundSafeSleep(waitMs);
                         continue; // Re-run the loop with the same lastId
                     }
 
@@ -415,13 +415,13 @@ async function executeDmall() {
                         retryCount++;
                         logTerminalOutput(`Proxy Error ${res.status}. Retrying (${retryCount}/3)...`, "err");
                         if(retryCount > 3) fetchLoop = false;
-                        await new Promise(r => setTimeout(r, 2000));
+                        await backgroundSafeSleep(2000);
                     }
                 } catch(e) { 
                     retryCount++; logTerminalOutput(`Network Error. Retrying...`, "err"); 
                     if(retryCount > 3) fetchLoop = false; 
                 }
-                await new Promise(r => setTimeout(r, 1000)); // Natural padding
+                await backgroundSafeSleep(1000); // Natural padding
             }
             
             // Clean Blacklist & Save
@@ -490,7 +490,7 @@ async function executeDmall() {
         localStorage.setItem('nosify_dm_targets_' + serverId, JSON.stringify(targets.slice(processedAmount)));
 
         // Wait the Delay setting between batches to avoid IP bans
-        await new Promise(r => setTimeout(r, dmDelay)); 
+        await backgroundSafeSleep(dmDelay);
     }
 
 
@@ -509,7 +509,7 @@ async function executeDmall() {
             for (let b = 0; b < bots.length; b++) {
                 await discordProxy(`https://discord.com/api/v10/users/@me/guilds/${serverId}`, 'DELETE', bots[b].token);
                 logTerminalOutput(`[Bot ${b+1}] 👋 Left server successfully.`, "win");
-                await new Promise(r => setTimeout(r, 600)); 
+                await backgroundSafeSleep(600);
             }
             $("#dmall-status-text").text("Auto-Leave Complete.");
         }
