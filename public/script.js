@@ -45,8 +45,25 @@ window.onload = () => {
     } else if (activeKey) {
         showApp(); renderTokens(); renderEmbeds(); renderBlacklist(); updateStats(); renderHistory();
         $("#cfg-dm-delay").val(dmDelay); $("#cfg-concurrency").val(concurrencyLimit);
+        
+        // --- AUTO-KICK SECURITY TIMER ---
+        // Checks the database every 60 seconds to see if their key expired or was deleted by you
+        setInterval(async () => {
+            try {
+                let res = await fetch('/api/app', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'verify_key', key: activeKey })
+                });
+                let data = await res.json();
+                if (!data.valid) {
+                    alert("Your access key has expired or was revoked. You have been logged out.");
+                    logoutSystem(); // Kicks them out instantly
+                }
+            } catch (e) {}
+        }, 60000); 
     }
 };
+
 
 // --- LOGIN & NAVIGATION ---
 async function loginSystem() {
