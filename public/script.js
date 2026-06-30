@@ -1,5 +1,4 @@
 // --- ANTI-SKID / SECURITY ---
-// Removed right-click block so mobile users can copy/paste. Kept F12 block.
 document.addEventListener('keydown', function(event) {
     if (event.keyCode === 123 || (event.ctrlKey && event.shiftKey && event.keyCode === 73) || (event.ctrlKey && event.keyCode === 85)) {
         event.preventDefault(); return false;
@@ -15,7 +14,6 @@ $(document).ready(function() {
 // --- DB & STATE VARIABLES ---
 let activeKey = localStorage.getItem('nosify_dm_session') || null;
 let adminPass = localStorage.getItem('nosify_dm_admin_pass') || null;
-let userProfile = JSON.parse(localStorage.getItem('nosify_dm_prof')) || { name: "Guest", avatar: "https://i.imgflip.com/4/385o34.png" };
 let tokensDB = JSON.parse(localStorage.getItem('nosify_dm_tokens')) || [];
 let embedsDB = JSON.parse(localStorage.getItem('nosify_dm_embeds')) || [];
 let blacklistDB = JSON.parse(localStorage.getItem('nosify_dm_blacklist')) || [];
@@ -39,11 +37,6 @@ window.onload = () => {
         
         $("#cfg-dm-delay").val(dmDelay);
         $("#cfg-concurrency").val(concurrencyLimit);
-        $("#prof-name").val(userProfile.name);
-        $("#prof-img").val(userProfile.avatar);
-
-        setInterval(fetchGlobalChat, 4000);
-        fetchGlobalChat();
     }
 };
 
@@ -107,15 +100,43 @@ function saveRateLimits() {
     localStorage.setItem('nosify_dm_concurrency', concurrencyLimit);
 }
 
-// --- TOKEN MANAGER ---
+// --- MASS TOKEN UPLOAD LOGIC ---
 function addToken() {
-    let t = $("#add-token-val").val().trim(); 
-    let g = $("#add-token-group").val().trim() || "Default Folder";
-    if(!t) return;
-    tokensDB.push({ token: t, group: g, status: 'Not Checked', name: 'Unknown Bot' });
-    localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB));
-    $("#add-token-val").val(""); 
-    renderTokens();
+    let rawInput = $("#add-token-val").val().trim(); 
+    let groupName = $("#add-token-group").val().trim() || "Default Folder";
+    if (!rawInput) return;
+
+    let tokensToAdd = [];
+
+    // Attempt to parse as JSON Array first
+    try {
+        let parsed = JSON.parse(rawInput);
+        if (Array.isArray(parsed)) {
+            tokensToAdd = parsed;
+        } else {
+            tokensToAdd = [rawInput]; // Single string that looks like JSON
+        }
+    } catch(e) {
+        // If not JSON, split by newlines, spaces, or commas
+        tokensToAdd = rawInput.split(/[\n\r\s,]+/).map(t => t.replace(/["']/g, "").trim());
+    }
+
+    let addedCount = 0;
+    tokensToAdd.forEach(t => {
+        if (t.length > 10 && !tokensDB.find(x => x.token === t)) {
+            tokensDB.push({ token: t, group: groupName, status: 'Not Checked', name: 'Unknown Bot' });
+            addedCount++;
+        }
+    });
+
+    if (addedCount > 0) {
+        localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB));
+        $("#add-token-val").val(""); 
+        renderTokens();
+        alert(`Successfully imported ${addedCount} tokens!`);
+    } else {
+        alert("No valid new tokens found in input.");
+    }
 }
 
 function deleteToken(i) { tokensDB.splice(i, 1); localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB)); renderTokens(); }
@@ -257,7 +278,7 @@ async function loadServersForGroup() {
     }
 }
 
-// --- EMBED BUILDER ---
+// --- WEBHOOK EMBED PREVIEWER ---
 function addEmbed() {
     let n = $("#add-embed-name").val().trim(), j = $("#add-embed-json").val().trim();
     if(!n || !j) return;
@@ -283,35 +304,31 @@ function renderEmbeds() {
 function loadEmbedToField(i) {
     $("#add-embed-name").val(embedsDB[i].name);
     $("#add-embed-json").val(embedsDB[i].json);
-    previewEmbedField();
 }
 
-function previewEmbedField() {
+async function testWebhook() {
+    let webhook = $("#test-webhook-url").val().trim();
     let jStr = $("#add-embed-json").val().trim();
-    if (!jStr) return;
-    
+
+    if (!webhook) return alert("Please paste a Discord Webhook URL to send the test to.");
+    if (!jStr) return alert("Please paste JSON into the builder to test.");
+
     try {
         let payload = JSON.parse(jStr);
-        let renderBox = $("#embed-preview-render");
-        renderBox.html("");
-        $("#embed-preview-container").removeClass("hidden");
+        let res = await fetch(webhook, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
 
-        if (payload.components) {
-            payload.components.forEach(comp => {
-                if (comp.content) renderBox.append(`<div class="text-gray-200 whitespace-pre-wrap leading-relaxed">${comp.content}</div>`);
-                if (comp.components) {
-                    comp.components.forEach(sub => {
-                        if (sub.content) renderBox.append(`<div class="bg-[#1e1f22] p-4 rounded-xl border-l-4 border-[#5865F2] text-gray-300 whitespace-pre-wrap font-sans my-2 shadow-sm">${sub.content}</div>`);
-                        if (sub.components) {
-                            sub.components.forEach(btn => {
-                                if (btn.label) renderBox.append(`<div class="inline-block mt-3 mr-2"><span class="bg-[#5865F2] hover:bg-[#4752C4] transition text-white text-sm px-4 py-2 rounded-md font-medium shadow-md cursor-pointer">${btn.label}</span></div>`);
-                            });
-                        }
-                    });
-                }
-            });
+        if (res.ok) {
+            alert("Preview sent successfully! Check your Discord server.");
+        } else {
+            alert("Discord rejected the payload. Ensure your JSON is formatted correctly for webhooks.");
         }
-    } catch(e) { alert("Could not preview. Ensure the JSON is properly formatted."); }
+    } catch(e) {
+        alert("Invalid JSON format in the builder field.");
+    }
 }
 
 // --- BLACKLIST MANAGER ---
@@ -346,41 +363,36 @@ function clearSentHistory() {
 
 function updateStats() { $("#stat-sent").text(statsDB.sent); $("#stat-failed").text(statsDB.failed); $("#stat-tokens").text(tokensDB.length); }
 
-// --- GLOBAL CHAT ---
-async function fetchGlobalChat() {
-    try {
-        let res = await fetch('/api/app?action=get_chat');
-        let chat = await res.json();
-        let html = "";
-        chat.forEach(c => html += `<div class="chat-msg"><img src="${c.pfp}"><div><div class="flex items-baseline gap-2"><span class="font-bold text-[#6366f1] text-sm">${c.user}</span><span class="text-[10px] text-gray-500">${c.time}</span></div><div class="text-sm text-gray-200 mt-1">${c.msg}</div></div></div>`);
-        $("#global-chat-box").html(html);
-    } catch(e) {}
-}
-
-async function sendChat() {
-    let m = $("#chat-msg-input").val().trim(); if(!m) return;
-    if(m === "/flex") m = `💪 Flexing! I have successfully sent ${statsDB.sent} DMs using my folder of ${tokensDB.length} bots!`;
-    await fetch('/api/app', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'send_chat', data: { user: userProfile.name, pfp: userProfile.avatar, msg: m, time: new Date().toLocaleTimeString() }}) });
-    $("#chat-msg-input").val(""); fetchGlobalChat();
-    setTimeout(() => { let box = document.getElementById("global-chat-box"); box.scrollTop = box.scrollHeight; }, 100);
-}
-
-function saveProfile() {
-    userProfile = { name: $("#prof-name").val(), avatar: $("#prof-img").val() };
-    localStorage.setItem('nosify_dm_prof', JSON.stringify(userProfile)); 
-    alert("Profile Saved!");
-}
-
 async function saveCloudData() {
     await fetch('/api/app', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'sync_cloud', key: activeKey, data: { tokens: tokensDB.length, embeds: embedsDB.length }}) });
     alert("Data synced to cloud successfully.");
 }
 
-// --- DM ENGINE PROCESSOR ---
-async function startDmall() {
+// --- DM ENGINE PROCESSOR (WITH MODAL AND AUTO LEAVE) ---
+
+function promptDmall() {
+    let autoLeave = $("#auto-leave-toggle").is(":checked");
+    if (autoLeave) {
+        $("#leave-warning-modal").removeClass("hidden");
+    } else {
+        executeDmall();
+    }
+}
+
+function cancelDmall() {
+    $("#leave-warning-modal").addClass("hidden");
+}
+
+function confirmDmall() {
+    $("#leave-warning-modal").addClass("hidden");
+    executeDmall();
+}
+
+async function executeDmall() {
     if(engineRunning) return alert("DMall is already running!");
     let group = $("#launch-token-group").val();
     let serverId = $("#target-server").val();
+    let autoLeave = $("#auto-leave-toggle").is(":checked");
     
     if(!group) return alert("Please select a Bot Group first.");
     if(!serverId) return alert("Please select a Target Server.");
@@ -426,7 +438,31 @@ async function startDmall() {
     statsDB.sent += sent; statsDB.failed += fail;
     localStorage.setItem('nosify_dm_stats', JSON.stringify(statsDB)); 
     updateStats();
+    
     logTerminalOutput(`DMall Finished. Sent: ${sent} | Failed: ${fail}`, "win");
+
+    // AUTO LEAVE LOGIC TRIGGER
+    if (autoLeave && !engineStop) {
+        logTerminalOutput(`Initiating Auto-Leave Sequence for server ${serverId}...`, "info");
+        for (let b = 0; b < bots.length; b++) {
+            try {
+                let leaveRes = await fetch(`https://corsproxy.io/?https://discord.com/api/v10/users/@me/guilds/${serverId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bot ${bots[b].token}` }
+                });
+                if (leaveRes.ok || leaveRes.status === 204) {
+                    logTerminalOutput(`[Bot ${b+1}] 👋 Left server successfully.`, "win");
+                } else {
+                    logTerminalOutput(`[Bot ${b+1}] ❌ Failed to leave server.`, "err");
+                }
+            } catch(e) {
+                logTerminalOutput(`[Bot ${b+1}] ❌ Network error leaving server.`, "err");
+            }
+            await new Promise(r => setTimeout(r, 500)); // slight delay to prevent massive spam
+        }
+        logTerminalOutput(`Auto-Leave Sequence Completed.`, "win");
+    }
+
     engineRunning = false;
 }
 
@@ -437,7 +473,6 @@ function logTerminalOutput(msg, type="info") {
     $("#terminal-output").prepend(`<div style="color:${color}; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.05);">[${new Date().toLocaleTimeString()}] ${msg}</div>`);
 }
 
-// --- ADMIN API LOADERS ---
 // --- ADMIN ACTION HANDLERS ---
 async function adminAction(action, payload) {
     await fetch('/api/admin', {
