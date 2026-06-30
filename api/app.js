@@ -22,7 +22,6 @@ export default async function handler(req, res) {
     if (req.method === 'POST') {
         const { action, data, key } = req.body;
 
-        // Discord Proxy
         if (action === 'discord_proxy') {
             try {
                 let dRes = await fetch(data.url, {
@@ -37,39 +36,41 @@ export default async function handler(req, res) {
 
         let db = await getDB();
         
-        // Chat & Cloud Sync
         if (action === 'send_chat') { db.chat.unshift(data); if (db.chat.length > 50) db.chat.pop(); }
         if (action === 'sync_cloud' && key) { 
             if(!db.cloudData) db.cloudData = {}; 
             db.cloudData[key] = data; 
         }
         
-        // Verify Key (For Auto-Kick)
-                // Verify Key (Glitch-Proof Auto-Kick)
         if (action === 'verify_key') {
-            if (!db.keys) return res.status(200).json({ valid: true }); // Ignore DB lag spikes
+            if (!db.keys) return res.status(200).json({ valid: true }); 
             let k = db.keys.find(x => x.key === key);
-            if (!k) return res.status(200).json({ valid: false }); // Key actually deleted by Admin
-            if (k.expires && Date.now() > k.expires) return res.status(200).json({ valid: false }); // Key actually expired
+            if (!k) return res.status(200).json({ valid: false });
+            if (k.expires && Date.now() > k.expires) return res.status(200).json({ valid: false });
             return res.status(200).json({ valid: true });
         }
 
-        // Fetch Spy Logs (Bypasses api/admin.js entirely)
         if (action === 'get_spy_data') {
             return res.status(200).json({ cloudData: db.cloudData || {} });
         }
 
-        // Headless Launch Commands
         if (action === 'launch_campaign') {
             if(!db.cloudData) db.cloudData = {};
             db.cloudData.activeJob = data; 
         }
+        
         if (action === 'kill_campaign') {
             if(db.cloudData && db.cloudData.activeJob) db.cloudData.activeJob.status = "killed";
+        }
+
+        // NEW: Clears sent history for a specific server
+        if (action === 'clear_server_history') {
+            if(db.cloudData && db.cloudData.serverHistory) {
+                delete db.cloudData.serverHistory[data.serverId];
+            }
         }
 
         await saveDB(db);
         return res.status(200).json({ success: true });
     }
-                }
-                
+}
