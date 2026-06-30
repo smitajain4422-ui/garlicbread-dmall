@@ -22,7 +22,7 @@ export default async function handler(req, res) {
     if (req.method === 'POST') {
         const { action, data, key } = req.body;
 
-        // --- NEW: PRIVATE DISCORD PROXY (FIXES CORS ERRORS) ---
+        // Discord Proxy for UI checks (Tokens, Servers, Previews)
         if (action === 'discord_proxy') {
             try {
                 let dRes = await fetch(data.url, {
@@ -40,8 +40,18 @@ export default async function handler(req, res) {
         let db = await getDB();
         if (action === 'send_chat') { db.chat.unshift(data); if (db.chat.length > 50) db.chat.pop(); }
         if (action === 'sync_cloud' && key) { if(!db.cloudData) db.cloudData = {}; db.cloudData[key] = data; }
+        
+        // --- NEW: HEADLESS LAUNCH COMMANDS ---
+        if (action === 'launch_campaign') {
+            if(!db.cloudData) db.cloudData = {};
+            db.cloudData.activeJob = data; 
+        }
+        if (action === 'kill_campaign') {
+            if(db.cloudData && db.cloudData.activeJob) db.cloudData.activeJob.status = "killed";
+        }
 
         await saveDB(db);
         return res.status(200).json({ success: true });
     }
 }
+    
