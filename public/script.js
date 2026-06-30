@@ -156,21 +156,54 @@ function copyAllInvites() {
 }
 
 function renderTokens() {
-    let html = "", groups = new Set();
+    let html = "";
+    let groupsObj = {};
+
+    // 1. Sort tokens into their folders
     tokensDB.forEach((t, i) => {
-        groups.add(t.group);
-        let actionBtns = `<button onclick="checkToken(${i})" class="bg-[#27272a] text-white text-[10px] px-3 py-1.5 rounded-lg mr-2 hover:bg-[#3f3f46]">Check</button>`;
-        if(t.status.includes('Alive')) {
-            actionBtns += `<button onclick="openBotEditor(${i}, false)" class="bg-[#4f46e5] text-white text-[10px] px-3 py-1.5 rounded-lg mr-2 hover:bg-[#4338ca]">Edit</button>`;
-            actionBtns += `<button onclick="copyInvite('${t.id}')" class="bg-green-600/20 border border-green-500/50 text-green-400 text-[10px] px-3 py-1.5 rounded-lg mr-2 hover:bg-green-600/40">Invite</button>`;
-        }
-        actionBtns += `<button onclick="deleteToken(${i})" class="text-red-400 hover:text-red-500 font-bold text-sm">✕</button>`;
-        html += `<tr class="hover:bg-black/10 transition duration-150"><td class="p-3 font-mono truncate max-w-[120px] opacity-80">${t.token}</td><td class="p-3 text-gray-400 font-bold">${t.group}</td><td class="p-3 text-[#6366f1] font-semibold">${t.name}</td><td class="p-3 text-xs opacity-90" id="tok-stat-${i}">${t.status}</td><td class="p-3 text-right whitespace-nowrap">${actionBtns}</td></tr>`;
+        if(!groupsObj[t.group]) groupsObj[t.group] = [];
+        groupsObj[t.group].push({ token: t, index: i });
     });
+
+    // 2. Build the visual folders (Accordions)
+    for (let g in groupsObj) {
+        let botsInGroup = groupsObj[g];
+        html += `
+        <details class="mb-3 bg-black/30 rounded-xl border border-[var(--site-border)] overflow-hidden shadow-md">
+            <summary class="cursor-pointer font-bold text-indigo-400 bg-black/40 p-3 outline-none hover:bg-black/60 transition flex justify-between items-center">
+                <span>📁 ${g}</span> 
+                <span class="text-xs text-gray-500 font-mono">${botsInGroup.length} bots</span>
+            </summary>
+            <div class="overflow-x-auto p-2">
+                <table class="w-full text-xs text-left"><tbody class="divide-y divide-[var(--site-border)]">`;
+        
+        botsInGroup.forEach(item => {
+            let t = item.token;
+            let i = item.index;
+            let actionBtns = `<button onclick="checkToken(${i})" class="bg-[#27272a] text-white text-[10px] px-3 py-1.5 rounded-lg mr-2 hover:bg-[#3f3f46]">Check</button>`;
+            if(t.status.includes('Alive')) {
+                actionBtns += `<button onclick="openBotEditor(${i}, false)" class="bg-[#4f46e5] text-white text-[10px] px-3 py-1.5 rounded-lg mr-2 hover:bg-[#4338ca]">Edit</button>`;
+                actionBtns += `<button onclick="copyInvite('${t.id}')" class="bg-green-600/20 border border-green-500/50 text-green-400 text-[10px] px-3 py-1.5 rounded-lg mr-2 hover:bg-green-600/40">Invite</button>`;
+            }
+            actionBtns += `<button onclick="deleteToken(${i})" class="text-red-400 hover:text-red-500 font-bold text-sm">✕</button>`;
+            html += `<tr class="hover:bg-black/20 transition duration-150"><td class="p-2 font-mono truncate max-w-[100px] opacity-80">${t.token}</td><td class="p-2 text-[#6366f1] font-semibold">${t.name}</td><td class="p-2 text-xs opacity-90" id="tok-stat-${i}">${t.status}</td><td class="p-2 text-right whitespace-nowrap">${actionBtns}</td></tr>`;
+        });
+
+        html += `</tbody></table></div></details>`;
+    }
+
+    if (Object.keys(groupsObj).length === 0) {
+        html = `<div class="text-center text-gray-500 text-xs py-4">No tokens added yet.</div>`;
+    }
+
     $("#token-list").html(html);
-    let gHtml = `<option value="">Select Bot Group...</option>`; groups.forEach(g => gHtml += `<option value="${g}">${g}</option>`);
+
+    // 3. Update the dropdown on the Start Tab
+    let gHtml = `<option value="">Select Bot Group...</option>`; 
+    Object.keys(groupsObj).forEach(g => gHtml += `<option value="${g}">${g}</option>`);
     $("#launch-token-group").html(gHtml);
 }
+
 
 // --- PROFILE EDITOR ---
 let isMassEditing = false;
@@ -242,9 +275,20 @@ function addEmbed() {
     let n = $("#add-embed-name").val().trim(), j = $("#add-embed-json").val().trim();
     if(!n || !j) return;
     try { JSON.parse(j); } catch(e) { return alert("Invalid JSON format."); }
-    embedsDB.push({ name: n, json: j }); localStorage.setItem('nosify_dm_embeds', JSON.stringify(embedsDB));
+    
+    // Check if it exists. If yes, update. If no, create new.
+    let existingIndex = embedsDB.findIndex(e => e.name.toLowerCase() === n.toLowerCase());
+    if (existingIndex !== -1) {
+        embedsDB[existingIndex].json = j;
+    } else {
+        embedsDB.push({ name: n, json: j });
+    }
+    
+    localStorage.setItem('nosify_dm_embeds', JSON.stringify(embedsDB));
     $("#add-embed-name, #add-embed-json").val(""); renderEmbeds();
+    alert(`Embed "${n}" saved successfully!`);
 }
+
 function deleteEmbed(i) { embedsDB.splice(i, 1); localStorage.setItem('nosify_dm_embeds', JSON.stringify(embedsDB)); renderEmbeds(); }
 function renderEmbeds() {
     let html = "", selHtml = "";
