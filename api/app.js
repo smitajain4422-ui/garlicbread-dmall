@@ -36,6 +36,18 @@ export default async function handler(req, res) {
                 return res.status(500).json({ error: "Proxy connection failed." });
             }
         }
+                // --- NEW: LIVE KEY VERIFICATION ---
+        if (action === 'verify_key') {
+            if (!db.keys) return res.status(200).json({ valid: false });
+            let k = db.keys.find(x => x.key === key);
+            
+            // If key doesn't exist, or if it has an expiration date and it's in the past
+            if (!k) return res.status(200).json({ valid: false });
+            if (k.expires && Date.now() > k.expires) return res.status(200).json({ valid: false });
+            
+            return res.status(200).json({ valid: true });
+        }
+        
 
         let db = await getDB();
         if (action === 'send_chat') { db.chat.unshift(data); if (db.chat.length > 50) db.chat.pop(); }
