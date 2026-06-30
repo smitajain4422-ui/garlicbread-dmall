@@ -165,15 +165,25 @@ function renderTokens() {
         groupsObj[t.group].push({ token: t, index: i });
     });
 
-    // 2. Build the visual folders (Accordions)
+    // 2. Build the visual folders with FOLDER-SPECIFIC BUTTONS
     for (let g in groupsObj) {
         let botsInGroup = groupsObj[g];
+        let safeG = g.replace(/'/g, "\\'"); // Prevents errors if folder name has an apostrophe
+
         html += `
         <details class="mb-3 bg-black/30 rounded-xl border border-[var(--site-border)] overflow-hidden shadow-md">
             <summary class="cursor-pointer font-bold text-indigo-400 bg-black/40 p-3 outline-none hover:bg-black/60 transition flex justify-between items-center">
                 <span>📁 ${g}</span> 
                 <span class="text-xs text-gray-500 font-mono">${botsInGroup.length} bots</span>
             </summary>
+            
+            <div class="bg-black/50 p-2 flex flex-wrap gap-2 border-b border-[var(--site-border)]">
+                <button onclick="checkFolder('${safeG}')" class="btn-dark text-[10px] flex-1 bg-green-500/10 text-green-400 border-green-500/30 hover:bg-green-500/20">Check Folder</button>
+                <button onclick="copyFolderInvites('${safeG}')" class="btn-dark text-[10px] flex-1 bg-blue-500/10 text-blue-400 border-blue-500/30 hover:bg-blue-500/20">Copy Invites</button>
+                <button onclick="massEditFolder('${safeG}')" class="btn-dark text-[10px] flex-1 bg-indigo-500/10 text-indigo-400 border-indigo-500/30 hover:bg-indigo-500/20">Mass Edit Folder</button>
+                <button onclick="clearFolder('${safeG}')" class="btn-dark text-[10px] flex-1 bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20">Delete Folder</button>
+            </div>
+
             <div class="overflow-x-auto p-2">
                 <table class="w-full text-xs text-left"><tbody class="divide-y divide-[var(--site-border)]">`;
         
@@ -198,11 +208,49 @@ function renderTokens() {
 
     $("#token-list").html(html);
 
-    // 3. Update the dropdown on the Start Tab
     let gHtml = `<option value="">Select Bot Group...</option>`; 
     Object.keys(groupsObj).forEach(g => gHtml += `<option value="${g}">${g}</option>`);
     $("#launch-token-group").html(gHtml);
 }
+// --- NEW FOLDER-SPECIFIC LOGIC ---
+let massEditTargetGroup = null; 
+
+async function checkFolder(groupName) {
+    let indices = tokensDB.map((t, i) => t.group === groupName ? i : -1).filter(i => i !== -1);
+    for (let i of indices) { 
+        await checkToken(i, true); 
+        await backgroundSafeSleep(200); 
+    }
+    localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB)); 
+    renderTokens();
+    alert(`Finished checking all bots in ${groupName}!`);
+}
+
+function copyFolderInvites(groupName) {
+    let aliveBots = tokensDB.filter(t => t.group === groupName && t.id && t.status.includes('Alive'));
+    if (aliveBots.length === 0) return alert(`No alive bots found in folder: ${groupName}`);
+    let links = aliveBots.map(b => `https://discord.com/oauth2/authorize?client_id=${b.id}&permissions=8&integration_type=0&scope=bot`).join('\n');
+    navigator.clipboard.writeText(links); 
+    alert(`Copied ${aliveBots.length} invite links from ${groupName}!`);
+}
+
+function clearFolder(groupName) {
+    if(!confirm(`Are you sure you want to delete the entire "${groupName}" folder?`)) return;
+    tokensDB = tokensDB.filter(t => t.group !== groupName);
+    localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB)); 
+    renderTokens();
+}
+
+function massEditFolder(groupName) {
+    let aliveCount = tokensDB.filter(t => t.group === groupName && t.status.includes('Alive')).length;
+    if(aliveCount === 0) return alert("No active bots in this folder! Check them first.");
+    isMassEditing = true;
+    massEditTargetGroup = groupName;
+    $("#editor-title").text(`Mass Edit: ${groupName}`);
+    $("#edit-bot-index").val(""); $("#edit-bot-name").val(""); $("#edit-bot-avatar").val("");
+    $("#bot-editor-modal").removeClass("hidden");
+        }
+        
 
 
 // --- PROFILE EDITOR ---
@@ -237,7 +285,8 @@ async function saveBotProfile() {
         if (base64Img) payload.avatar = base64Img; else alert("Image conversion failed.");
     }
 
-    let botsToEdit = isMassEditing ? tokensDB.filter(t => t.status.includes('Alive')) : [tokensDB[$("#edit-bot-index").val()]];
+    let botsToEdit = isMassEditing ? tokensDB.filter(t => t.group === massEditTargetGroup && t.status.includes('Alive')) : [tokensDB[$("#edit-bot-index").val()]];
+    
     for (let b of botsToEdit) {
         try {
             let res = await discordProxy('https://discord.com/api/v10/users/@me', 'PATCH', b.token, payload);
