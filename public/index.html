@@ -97,6 +97,7 @@
         </div>
 
         <div class="content-area p-4 md:p-8 w-full">
+            
             <div id="tab-home" class="tab-content active space-y-6">
                 <div>
                     <h2 class="text-3xl font-bold gradient-text mb-2">Campaign Setup</h2>
@@ -109,11 +110,18 @@
                             <select id="launch-token-group" class="input-box" onchange="loadServersForGroup()"></select>
                         </div>
                         <div>
-                            <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block mb-2 tracking-wide">2. Target Server</label>
-                            <select id="target-server" class="input-box">
-                                <option value="">Select a Bot Group First...</option>
-                            </select>
+                            <div class="flex justify-between items-end mb-2">
+                                <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block tracking-wide">2. Target Server</label>
+                                <span id="server-resume-badge" class="text-[10px] font-bold text-green-400 bg-green-500/10 px-2 py-1 rounded hidden">Memory Found</span>
+                            </div>
+                            <select id="target-server" class="input-box" onchange="checkServerMemory()"><option value="">Select a Bot Group First...</option></select>
                         </div>
+                        
+                        <div id="memory-controls" class="hidden bg-indigo-500/10 border border-indigo-500/30 p-3 rounded-xl flex justify-between items-center">
+                            <span class="text-xs text-indigo-300 font-semibold" id="memory-text">Paused campaign detected.</span>
+                            <button onclick="wipeServerMemory()" class="btn-red px-3 py-1 text-xs whitespace-nowrap">Wipe & Restart from 0</button>
+                        </div>
+
                         <div>
                             <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block mb-2 tracking-wide">3. Select Embed Message</label>
                             <select id="launch-embed" class="input-box"></select>
@@ -136,7 +144,7 @@
                             <label for="auto-leave-toggle" class="text-sm font-bold text-red-400 cursor-pointer">Auto-Leave Server After DMall</label>
                         </div>
 
-                        <button onclick="promptDmall()" class="w-full btn-blue py-4 mt-2 text-base shadow-lg shadow-indigo-500/30">Start DMall Process</button>
+                        <button onclick="promptDmall()" class="w-full btn-blue py-4 mt-2 text-base shadow-lg shadow-indigo-500/30">Start DMall Sequence</button>
                     </div>
                 </div>
             </div>
@@ -144,12 +152,12 @@
             <div id="tab-dash" class="tab-content space-y-6">
                 <div>
                     <h2 class="text-3xl font-bold gradient-text mb-2">Analytics Overview</h2>
-                    <p class="text-[var(--site-text-muted)] text-sm">Track your mass DM metrics and bot health.</p>
+                    <p class="text-[var(--site-text-muted)] text-sm">Track your overall mass DM metrics.</p>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div class="glass-card text-center relative overflow-hidden">
                         <div class="absolute top-0 left-0 w-full h-1 bg-green-500"></div>
-                        <div class="text-[var(--site-text-muted)] text-xs uppercase font-bold tracking-wider">Successfully Sent</div>
+                        <div class="text-[var(--site-text-muted)] text-xs uppercase font-bold tracking-wider">Total Lifetime Sent</div>
                         <div class="text-5xl font-bold text-green-500 mt-4" id="stat-sent">0</div>
                     </div>
                     <div class="glass-card text-center relative overflow-hidden">
@@ -171,9 +179,6 @@
                         <h2 class="text-3xl font-bold gradient-text mb-2">Configuration</h2>
                         <p class="text-[var(--site-text-muted)] text-sm">Manage bots, embeds, delays, and blacklists.</p>
                     </div>
-                    <div class="flex gap-3">
-                        <button onclick="clearSystemData()" class="btn-red bg-red-500/10 border-red-500/50 hover:bg-red-500/20 px-4 py-2">Hard Reset System</button>
-                    </div>
                 </div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -189,8 +194,8 @@
                                 <div class="flex gap-2 pt-2 flex-wrap">
                                     <button onclick="checkAllTokens()" class="btn-dark text-xs flex-1 bg-green-500/10 border-green-500/30 text-green-400 hover:bg-green-500/20">Check All Bots</button>
                                     <button onclick="copyAllInvites()" class="btn-dark text-xs flex-1 bg-blue-500/10 border-blue-500/30 text-blue-400 hover:bg-blue-500/20">Copy All Invites</button>
-                                    <button onclick="openMassBotEditor()" class="btn-dark text-xs flex-1 bg-indigo-500/10 border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/20">Mass Edit Profiles</button>
-                                    <button onclick="clearAllTokens()" class="btn-dark text-xs flex-1 bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20">Clear All Bots</button>
+                                    <button onclick="openMassBotEditor()" class="btn-dark text-xs flex-1 bg-indigo-500/10 border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/20">Mass Edit</button>
+                                    <button onclick="clearAllTokens()" class="btn-dark text-xs flex-1 bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20">Clear Bots</button>
                                 </div>
                             </div>
                             <div class="overflow-y-auto max-h-48 border border-[var(--site-border)] rounded-xl bg-[var(--site-input)] mt-4">
@@ -199,7 +204,7 @@
                         </div>
 
                         <div class="glass-card space-y-4">
-                            <h3 class="text-base font-bold text-yellow-500">Delay & Rate Limits</h3>
+                            <h3 class="text-base font-bold text-yellow-500">Delay Matrix</h3>
                             <div class="grid grid-cols-2 gap-4">
                                 <div>
                                     <label class="text-[10px] uppercase font-bold text-[var(--site-text-muted)] block mb-2 tracking-wide">Delay Between DMs (ms)</label>
@@ -226,7 +231,6 @@
                                     <button onclick="testWebhook()" class="btn-dark text-xs whitespace-nowrap bg-indigo-500 text-white border-none">Send Test</button>
                                 </div>
                             </div>
-
                             <button onclick="addEmbed()" class="w-full btn-blue">Save Embed to Database</button>
                             <div class="overflow-y-auto max-h-32 border border-[var(--site-border)] rounded-xl bg-[var(--site-input)] p-2 mt-4" id="embed-list"></div>
                         </div>
@@ -245,60 +249,77 @@
             <div id="tab-console" class="tab-content space-y-6">
                 <div class="flex justify-between items-center flex-wrap gap-4">
                     <div>
-                        <h2 class="text-3xl font-bold gradient-text mb-2">Execution Logs</h2>
-                        <p class="text-[var(--site-text-muted)] text-sm" id="dmall-status-text">Ready to launch.</p>
+                        <h2 class="text-3xl font-bold gradient-text mb-2">Campaign Console</h2>
+                        <p class="text-[var(--site-text-muted)] text-sm" id="dmall-status-text">Awaiting Initialization.</p>
                     </div>
-                    <div class="flex gap-3">
-                        <button onclick="clearTerminalLogs()" class="btn-dark text-xs px-4">Clear Logs</button>
-                        <button onclick="stopDmall()" class="btn-red bg-red-500 hover:bg-red-600 text-white border-none px-6 py-3 font-bold shadow-lg shadow-red-500/30 text-sm">STOP DMALL</button>
+                    <div class="flex gap-2 bg-black/40 p-1 rounded-lg border border-[var(--site-border)]">
+                        <button onclick="switchConsoleView('live')" id="btn-con-live" class="px-4 py-2 text-sm font-bold rounded-md bg-[#6366f1] text-white transition">Live Stats</button>
+                        <button onclick="switchConsoleView('history')" id="btn-con-hist" class="px-4 py-2 text-sm font-bold rounded-md text-gray-400 hover:text-white transition">Log History</button>
                     </div>
                 </div>
                 
-                <div class="grid grid-cols-3 gap-4 text-center">
-                    <div class="glass-card !p-4"><span class="text-xs text-[var(--site-text-muted)] uppercase tracking-wider font-bold">Total Scraped</span><br><span id="con-scraped" class="text-2xl font-bold text-white mt-1 block">0</span></div>
-                    <div class="glass-card !p-4"><span class="text-xs text-[var(--site-text-muted)] uppercase tracking-wider font-bold">Successfully Sent</span><br><span id="con-sent" class="text-2xl font-bold text-green-500 mt-1 block">0</span></div>
-                    <div class="glass-card !p-4"><span class="text-xs text-[var(--site-text-muted)] uppercase tracking-wider font-bold">Failed (403)</span><br><span id="con-failed" class="text-2xl font-bold text-red-500 mt-1 block">0</span></div>
+                <div id="console-live" class="space-y-6">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                        <div class="glass-card !p-5 relative overflow-hidden"><div class="text-[10px] text-gray-400 uppercase tracking-wider font-bold mb-2">Target Audience</div><span id="con-scraped" class="text-3xl font-bold text-white block">0</span></div>
+                        <div class="glass-card !p-5 relative overflow-hidden"><div class="text-[10px] text-green-400 uppercase tracking-wider font-bold mb-2">Successfully Sent</div><span id="con-sent" class="text-3xl font-bold text-green-500 block">0</span></div>
+                        <div class="glass-card !p-5 relative overflow-hidden"><div class="text-[10px] text-red-400 uppercase tracking-wider font-bold mb-2">Failed Drops</div><span id="con-failed" class="text-3xl font-bold text-red-500 block">0</span></div>
+                        <div class="glass-card !p-5 relative overflow-hidden bg-indigo-500/5 border-indigo-500/30"><div class="text-[10px] text-indigo-400 uppercase tracking-wider font-bold mb-2">Remaining Left</div><span id="con-left" class="text-3xl font-bold text-indigo-400 block">0</span></div>
+                    </div>
+                    
+                    <div class="space-y-2">
+                        <div class="flex justify-between text-xs font-bold text-gray-400 px-2">
+                            <span>Campaign Progress</span>
+                            <span id="con-percent">0%</span>
+                        </div>
+                        <div class="progress-bg h-4"><div class="progress-fill" id="con-progress"></div></div>
+                    </div>
+
+                    <div class="flex justify-center mt-6">
+                        <button onclick="stopDmall()" class="btn-red bg-red-500 hover:bg-red-600 text-white border-none px-10 py-4 font-bold shadow-lg shadow-red-500/30 text-base rounded-xl transition transform hover:scale-105">🛑 STOP DMALL SEQUENCE</button>
+                    </div>
                 </div>
-                
-                <div class="progress-bg"><div class="progress-fill" id="con-progress"></div></div>
-                <div class="console-log shadow-inner" id="terminal-output">System Booted. Persistent logs active.</div>
+
+                <!-- HISTORY LOGS VIEW -->
+                <div id="console-history" class="hidden space-y-4">
+                    <div class="flex justify-end">
+                        <button onclick="clearTerminalLogs()" class="btn-dark text-xs px-4 border-red-500/30 text-red-400 hover:bg-red-500/10">Wipe Log History</button>
+                    </div>
+                    <div class="console-log shadow-inner h-[500px]" id="terminal-output">System Booted. Persistent logs active.</div>
+                </div>
             </div>
 
-                        <div id="tab-tutorial" class="tab-content space-y-6">
+            <!-- TUTORIAL TAB -->
+            <div id="tab-tutorial" class="tab-content space-y-6">
                 <div>
                     <h2 class="text-3xl font-bold gradient-text mb-2">Comprehensive Guide</h2>
                     <p class="text-[var(--site-text-muted)] text-sm">Mastering the Nosify DMall Engine.</p>
                 </div>
                 <div class="glass-card space-y-6 max-w-4xl text-sm leading-relaxed text-gray-300">
                     <div>
-                        <h3 class="text-lg font-bold text-indigo-400 border-b border-[var(--site-border)] pb-2 mb-2">1. The "10-Second Limitation"</h3>
-                        <p>Because this site runs on free cloud servers, <strong>you cannot close your browser tab</strong> while DMing. If you close the tab, it will stop. However, we save your exact progress to your computer! If you accidentally close it, just open the site again, click Start, and it will skip everyone it already messaged.</p>
+                        <h3 class="text-lg font-bold text-indigo-400 border-b border-[var(--site-border)] pb-2 mb-2">1. Memory & Resumption</h3>
+                        <p>Because this site runs on cloud servers, it will pause if you close your browser tab. <strong>However, progress is saved per-server.</strong> If you accidentally close it, just select the server again in the Start tab. It will detect the paused memory and automatically resume exactly where it left off! You can also wipe this memory manually.</p>
                     </div>
                     <div>
-                        <h3 class="text-lg font-bold text-indigo-400 border-b border-[var(--site-border)] pb-2 mb-2">2. Tokens & Invite Links</h3>
-                        <p>Paste tokens (single, lists, or JSON arrays) into the Config tab. Click <strong>Check All Bots</strong>. The system will securely verify them. Click <strong>Copy All Invites</strong> to instantly copy Admin invite links for every working bot you have so you can add them to your target server.</p>
+                        <h3 class="text-lg font-bold text-indigo-400 border-b border-[var(--site-border)] pb-2 mb-2">2. Scraping 10k+ Members</h3>
+                        <p>The system is built to scrape massive servers. Discord will periodically rate-limit the bots during scraping. Do not panic! The engine will automatically pause for the exact duration Discord requests, and resume scraping until 100% of the members are fetched.</p>
                     </div>
                     <div>
-                        <h3 class="text-lg font-bold text-pink-400 border-b border-[var(--site-border)] pb-2 mb-2">3. Mass Editing Profiles</h3>
-                        <p>Instead of editing bots one by one, click <strong>Mass Edit Profiles</strong>. This will change the Username and Avatar for *every active bot* in your database instantly, saving you tons of time when setting up a new campaign.</p>
+                        <h3 class="text-lg font-bold text-pink-400 border-b border-[var(--site-border)] pb-2 mb-2">3. Mass Editing & Tokens</h3>
+                        <p>Paste arrays of tokens and hit <strong>Check All Bots</strong>. Use <strong>Mass Edit Profiles</strong> to change the names and avatars of every alive bot in your database at once. Use <strong>Copy All Invites</strong> to instantly pull them into your server.</p>
                     </div>
                     <div>
-                        <h3 class="text-lg font-bold text-yellow-400 border-b border-[var(--site-border)] pb-2 mb-2">4. Embed Variables (Mentions & IDs)</h3>
-                        <p>You can personalize your DMs automatically. Inside your raw JSON in the Embed Builder, you can type:<br>
-                        - <code>{userid}</code> : This will be replaced by the target's raw Discord ID.<br>
-                        - <code>{usermention}</code> : This will be replaced by an actual ping/mention (e.g. @Spencer) in the user's DM.<br>
-                        <em>Example:</em> "Hey {usermention}, you won!"</p>
-                    </div>
-                    <div>
-                        <h3 class="text-lg font-bold text-green-400 border-b border-[var(--site-border)] pb-2 mb-2">5. Auto-Leave Servers</h3>
-                        <p>In the Start tab, turn on the <strong>Auto-Leave</strong> toggle. Once your mass DM finishes, all of your bots will automatically delete themselves from the target server so admins cannot track them down and report them to Discord Trust & Safety.</p>
+                        <h3 class="text-lg font-bold text-yellow-400 border-b border-[var(--site-border)] pb-2 mb-2">4. Embed Variables</h3>
+                        <p>Personalize DMs in the Embed Builder:<br>
+                        - <code>{userid}</code> : Target's raw Discord ID.<br>
+                        - <code>{usermention}</code> : Actual ping/mention (e.g. @User).<br></p>
                     </div>
                 </div>
             </div>
         </div>
     </div>
     
-    <div class="watermark">NOSIFY MULTI BOT ENGINE</div>
+    <div class="watermark">NOSIFY MULTI BOT DMall</div>
     <script src="script.js"></script>
 </body>
 </html>
+
