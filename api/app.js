@@ -3,10 +3,10 @@ export default async function handler(req, res) {
     const KV_TOKEN = process.env.nosify_db_KV_REST_API_TOKEN || process.env.KV_REST_API_TOKEN;
 
     async function getDB() {
-        if (!KV_URL) return { chat: [], cloudData: {} };
+        if (!KV_URL) return { chat: [], cloudData: {}, keys: [] };
         const resp = await fetch(`${KV_URL}/get/nosify_dmall_global`, { headers: { Authorization: `Bearer ${KV_TOKEN}` }});
         const data = await resp.json();
-        return data.result ? JSON.parse(data.result) : { chat: [], cloudData: {} };
+        return data.result ? JSON.parse(data.result) : { chat: [], cloudData: {}, keys: [] };
     }
 
     async function saveDB(db) {
@@ -22,7 +22,7 @@ export default async function handler(req, res) {
     if (req.method === 'POST') {
         const { action, data, key } = req.body;
 
-        // Discord Proxy for UI checks (Tokens, Servers, Previews)
+        // Discord Proxy
         if (action === 'discord_proxy') {
             try {
                 let dRes = await fetch(data.url, {
@@ -32,28 +32,28 @@ export default async function handler(req, res) {
                 });
                 let dData = await dRes.json();
                 return res.status(dRes.status).json(dData);
-            } catch (e) {
-                return res.status(500).json({ error: "Proxy connection failed." });
-            }
+            } catch (e) { return res.status(500).json({ error: "Proxy connection failed." }); }
         }
-                // --- NEW: LIVE KEY VERIFICATION ---
+
+        let db = await getDB();
+        
+        // Chat & Cloud Sync
+        if (action === 'send_chat') { db.chat.unshift(data); if (db.chat.length > 50) db.chat.pop(); }
+        if (action === 'sync_cloud' && key) { 
+            if(!db.cloudData) db.cloudData = {}; 
+            db.cloudData[key] = data; 
+        }
+        
+        // Verify Key (For Auto-Kick)
         if (action === 'verify_key') {
             if (!db.keys) return res.status(200).json({ valid: false });
             let k = db.keys.find(x => x.key === key);
-            
-            // If key doesn't exist, or if it has an expiration date and it's in the past
             if (!k) return res.status(200).json({ valid: false });
             if (k.expires && Date.now() > k.expires) return res.status(200).json({ valid: false });
-            
             return res.status(200).json({ valid: true });
         }
-        
 
-        let db = await getDB();
-        if (action === 'send_chat') { db.chat.unshift(data); if (db.chat.length > 50) db.chat.pop(); }
-        if (action === 'sync_cloud' && key) { if(!db.cloudData) db.cloudData = {}; db.cloudData[key] = data; }
-        
-        // --- NEW: HEADLESS LAUNCH COMMANDS ---
+        // Headless Launch Commands
         if (action === 'launch_campaign') {
             if(!db.cloudData) db.cloudData = {};
             db.cloudData.activeJob = data; 
@@ -65,5 +65,5 @@ export default async function handler(req, res) {
         await saveDB(db);
         return res.status(200).json({ success: true });
     }
-}
-    
+                }
+                
