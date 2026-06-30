@@ -95,7 +95,10 @@
                             <select id="launch-token-group" onchange="loadServersForGroup()" class="input-dark"></select>
                         </div>
                         <div>
-                            <label class="text-xs text-gray-500 block mb-1">Target Server (Scrape from here)</label>
+                            <div class="flex justify-between items-end mb-1">
+                                <label class="text-xs text-gray-500">Target Server (Scrape from here)</label>
+                                <span onclick="clearServerDMs()" class="text-xs text-red-400 hover:text-red-500 cursor-pointer font-bold border-b border-transparent hover:border-red-500">Clear Server History</span>
+                            </div>
                             <select id="target-server" class="input-dark"><option value="">Select a Bot Group First...</option></select>
                         </div>
                         <div>
@@ -160,15 +163,9 @@
                     <div class="bg-gradient-to-r from-pink-500 to-indigo-500 h-3 rounded-full transition-all duration-500" id="con-progress" style="width: 0%"></div>
                 </div>
                 
-                <!-- FORCE UNLOCK & STOP BUTTONS -->
-                <div class="flex gap-4 mt-6">
-                    <button onclick="stopDmall()" class="flex-1 bg-red-500 text-white font-bold py-4 rounded-xl hover:bg-red-600 transition shadow-lg shadow-red-500/20 text-lg flex items-center justify-center gap-2">
-                        <span class="animate-pulse h-3 w-3 bg-white rounded-full"></span> STOP SEQUENCE
-                    </button>
-                    <button onclick="forceUnlockEngine()" class="bg-gray-800 border border-gray-700 text-gray-400 font-bold px-4 rounded-xl hover:bg-gray-700 hover:text-white transition text-xs flex items-center justify-center text-center">
-                        Force<br>Unlock
-                    </button>
-                </div>
+                <button onclick="stopDmall()" class="w-full bg-red-500 text-white font-bold py-4 rounded-xl mt-6 hover:bg-red-600 transition shadow-lg shadow-red-500/20 text-lg flex items-center justify-center gap-2">
+                    <span class="animate-pulse h-3 w-3 bg-white rounded-full"></span> STOP DMALL SEQUENCE
+                </button>
             </div>
 
             <!-- History View -->
