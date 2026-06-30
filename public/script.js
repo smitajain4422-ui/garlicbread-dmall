@@ -390,6 +390,21 @@ function renderBlacklist() {
     $("#blacklist-list").html(html);
 }
 
+function clearEntireBlacklist() {
+    if(confirm("Are you sure you want to clear your entire Blacklist? This will allow your bots to DM these users again in the next campaign!")) {
+        blacklistDB = [];
+        localStorage.setItem('nosify_dm_blacklist', JSON.stringify(blacklistDB));
+        renderBlacklist();
+    }
+}
+
+function forceUnlockEngine() {
+    if(!confirm("Are you sure? Only use this if your campaign is stuck on 'Running' to force it to let you start a new one.")) return;
+    engineRunning = false;
+    if(liveTracker) clearInterval(liveTracker);
+    $("#dmall-status-text").text("Engine Forcefully Unlocked.");
+    alert("Unlocked! You can now start a new campaign.");
+}
 function updateStats() { 
     let activeTokenCount = tokensDB.filter(t => t.status !== "Deleted by User 🗑️").length;
     $("#stat-sent").text(statsDB.sent); $("#stat-failed").text(statsDB.failed); $("#stat-tokens").text(activeTokenCount); 
@@ -448,11 +463,8 @@ async function checkExistingCampaign() {
 
 function startLiveTracking() {
     if(liveTracker) clearInterval(liveTracker);
-    
-    // Lock the engine and switch to the console tab
     engineRunning = true;
-    switchTab('tab-console'); 
-    switchConsoleView('live');
+    switchTab('tab-console'); switchConsoleView('live');
     $("#dmall-status-text").text("Engine Running Offline 24/7...");
 
     liveTracker = setInterval(async () => {
@@ -464,23 +476,36 @@ function startLiveTracking() {
             
             if (job && job.progress) {
                 let p = job.progress;
-                $("#con-sent").text(p.sent);
-                $("#con-failed").text(p.failed);
                 
+                // --- AUTO-SAVE DMs TO BLACKLIST ---
+                if (p.sentIds && p.sentIds.length > 0) {
+                    let addedNew = false;
+                    p.sentIds.forEach(id => {
+                        if(!blacklistDB.includes(id)) {
+                            blacklistDB.push(id);
+                            addedNew = true;
+                        }
+                    });
+                    if(addedNew) {
+                        localStorage.setItem('nosify_dm_blacklist', JSON.stringify(blacklistDB));
+                        renderBlacklist(); // Updates the UI instantly
+                    }
+                }
+                
+                $("#con-sent").text(p.sent); $("#con-failed").text(p.failed);
                 let left = p.total - (p.sent + p.failed);
                 $("#con-left").text(left > 0 ? left : 0);
                 
                 let pct = Math.floor(((p.sent + p.failed) / p.total) * 100) || 0;
                 $("#con-progress").css("width", `${pct}%`); $("#con-percent").text(`${pct}%`);
                 
-                // Stop tracking automatically if engine finishes or gets killed
                 if (job.status === "finished" || job.status === "killed") {
                     engineRunning = false; clearInterval(liveTracker);
                     $("#dmall-status-text").text(job.status === "finished" ? "Campaign Complete." : "Engine Halted.");
                     addHistoryRecord(job.status === "finished" ? 'finished' : 'paused', job.serverId || "Unknown", p.sent, p.failed, left > 0 ? left : 0);
                 }
             }
-        } catch(e) {} // Ignores network spikes
+        } catch(e) {} 
     }, 3000);
 }
 
