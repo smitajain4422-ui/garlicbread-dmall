@@ -1,5 +1,5 @@
 // --- ANTI-SLEEP BACKGROUND WORKER ---
-const workerBlob = new Blob([`self.onmessage = function(e) { setTimeout(() => self.postMessage('wake_up'), e.data); };`], { type: 'application/javascript' });
+const workerBlob = new Blob([`self.onmessage = 89876777777777777777777777777777777777777777777function(e) { setTimeout(() => self.postMessage('wake_up'), e.data); };`], { type: 'application/javascript' });
 const antiSleepWorker = new Worker(URL.createObjectURL(workerBlob));
 
 function backgroundSafeSleep(ms) {
@@ -427,6 +427,8 @@ function promptDmall() {
 function cancelDmall() { $("#leave-warning-modal").addClass("hidden"); }
 function confirmDmall() { $("#leave-warning-modal").addClass("hidden"); executeDmall(); }
 
+let liveTracker = null; // Add this line right above the functions
+
 async function executeDmall() {
     if(engineRunning) return alert("A campaign is already processing offline!");
     
@@ -450,13 +452,45 @@ async function executeDmall() {
 
     switchTab('tab-console'); switchConsoleView('live');
     $("#dmall-status-text").text("Pushing to 24/7 Node.js Engine...");
-    $("#con-sent").text("OFFLINE"); $("#con-failed").text("OFFLINE"); $("#con-left").text("OFFLINE"); $("#con-percent").text("---"); 
+    
+    // Reset UI to 0 instead of "OFFLINE"
+    $("#con-sent").text("0"); $("#con-failed").text("0"); $("#con-left").text("Calc..."); $("#con-percent").text("0%"); $("#con-progress").css("width", "0%");
 
     try {
         await fetch('/api/app', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'launch_campaign', data: launchOrder }) });
         alert("✅ Campaign successfully pushed to the backend! You can safely close your browser or turn off your PC.");
         $("#dmall-status-text").text("Engine Running Offline 24/7..."); engineRunning = true;
-        addHistoryRecord('finished', serverId, 'Offline', 'Offline', 'Offline');
+        
+        // --- LIVE TRACKER (Pings Database every 3 Seconds) ---
+        if(liveTracker) clearInterval(liveTracker);
+        liveTracker = setInterval(async () => {
+            if(!engineRunning) return clearInterval(liveTracker);
+            try {
+                let res = await fetch('/api/app', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'get_spy_data' }) });
+                let db = await res.json();
+                let job = db.cloudData ? db.cloudData.activeJob : null;
+                
+                if (job && job.progress) {
+                    let p = job.progress;
+                    $("#con-sent").text(p.sent);
+                    $("#con-failed").text(p.failed);
+                    
+                    let left = p.total - (p.sent + p.failed);
+                    $("#con-left").text(left > 0 ? left : 0);
+                    
+                    let pct = Math.floor(((p.sent + p.failed) / p.total) * 100) || 0;
+                    $("#con-progress").css("width", `${pct}%`); $("#con-percent").text(`${pct}%`);
+                    
+                    // Stop tracking automatically if engine finishes
+                    if (job.status === "finished" || job.status === "killed") {
+                        engineRunning = false; clearInterval(liveTracker);
+                        $("#dmall-status-text").text(job.status === "finished" ? "Campaign Complete." : "Engine Halted.");
+                        addHistoryRecord(job.status === "finished" ? 'finished' : 'paused', serverId, p.sent, p.failed, left > 0 ? left : 0);
+                    }
+                }
+            } catch(e) {} // Ignores network spikes
+        }, 3000);
+
     } catch(e) { alert("Failed to connect to the database."); $("#dmall-status-text").text("Launch Failed."); }
 }
 
@@ -465,11 +499,14 @@ async function stopDmall() {
     try {
         await fetch('/api/app', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'kill_campaign' }) });
         alert("🛑 Kill switch sent! The backend engine will halt on its next chunk.");
-        engineRunning = false; $("#dmall-status-text").text("Engine Halted.");
-        addHistoryRecord('paused', $("#target-server").val() || "Unknown", "Offline", "Offline", "Offline");
+        engineRunning = false; 
+        if(liveTracker) clearInterval(liveTracker); // Stop the UI from pinging
+        $("#dmall-status-text").text("Engine Halted.");
+        
+        let s = $("#con-sent").text(); let f = $("#con-failed").text(); let l = $("#con-left").text();
+        addHistoryRecord('paused', $("#target-server").val() || "Unknown", s, f, l);
     } catch(e) { alert("Failed to send kill switch."); }
 }
-
 // --- ADMIN PANEL API & HELPER ---
 function copyTextData(encodedText) {
     navigator.clipboard.writeText(decodeURIComponent(encodedText)); alert("Tokens copied to clipboard!");
