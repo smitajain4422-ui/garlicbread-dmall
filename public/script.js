@@ -33,6 +33,24 @@ let engineRunning = false;
 let engineStop = false;
 let totalCampaignTargets = 0; // Tracks total original scraped size
 
+// --- ANTI-SLEEP BACKGROUND WORKER ---
+// Bypasses the browser freezing tabs when you switch away.
+const workerBlob = new Blob([`
+    self.onmessage = function(e) { setTimeout(() => self.postMessage('wake_up'), e.data); };
+`], { type: 'application/javascript' });
+const antiSleepWorker = new Worker(URL.createObjectURL(workerBlob));
+
+function backgroundSafeSleep(ms) {
+    return new Promise(resolve => {
+        const handler = () => {
+            antiSleepWorker.removeEventListener('message', handler);
+            resolve();
+        };
+        antiSleepWorker.addEventListener('message', handler);
+        antiSleepWorker.postMessage(ms);
+    });
+}
+
 window.onload = () => {
     if (activeKey === "SECURE_ADMIN_TOKEN") {
         showAdminPanel();
