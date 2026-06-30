@@ -59,6 +59,9 @@ window.onload = () => {
         showApp(); renderTokens(); renderEmbeds(); renderBlacklist(); updateStats(); renderHistory();
         $("#cfg-dm-delay").val(dmDelay); $("#cfg-concurrency").val(concurrencyLimit);
         
+        // --- RESTORES UI IF CAMPAIGN IS ALREADY RUNNING ---
+        checkExistingCampaign(); 
+        
         // AUTO-KICK SECURITY TIMER (Checks DB every 60s)
         setInterval(async () => {
             try {
@@ -427,10 +430,63 @@ function promptDmall() {
 function cancelDmall() { $("#leave-warning-modal").addClass("hidden"); }
 function confirmDmall() { $("#leave-warning-modal").addClass("hidden"); executeDmall(); }
 
-let liveTracker = null; // Add this line right above the functions
+// --- LIVE TRACKER & AUTO-RESUME ---
+let liveTracker = null;
+
+async function checkExistingCampaign() {
+    try {
+        let res = await fetch('/api/app', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'get_spy_data' }) });
+        let db = await res.json();
+        let job = db.cloudData ? db.cloudData.activeJob : null;
+        
+        // If the database says a job is currently active or processing, lock the UI and resume tracking
+        if (job && (job.status === "active" || job.status === "processing")) {
+            startLiveTracking();
+        }
+    } catch(e) {}
+}
+
+function startLiveTracking() {
+    if(liveTracker) clearInterval(liveTracker);
+    
+    // Lock the engine and switch to the console tab
+    engineRunning = true;
+    switchTab('tab-console'); 
+    switchConsoleView('live');
+    $("#dmall-status-text").text("Engine Running Offline 24/7...");
+
+    liveTracker = setInterval(async () => {
+        if(!engineRunning) return clearInterval(liveTracker);
+        try {
+            let res = await fetch('/api/app', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'get_spy_data' }) });
+            let db = await res.json();
+            let job = db.cloudData ? db.cloudData.activeJob : null;
+            
+            if (job && job.progress) {
+                let p = job.progress;
+                $("#con-sent").text(p.sent);
+                $("#con-failed").text(p.failed);
+                
+                let left = p.total - (p.sent + p.failed);
+                $("#con-left").text(left > 0 ? left : 0);
+                
+                let pct = Math.floor(((p.sent + p.failed) / p.total) * 100) || 0;
+                $("#con-progress").css("width", `${pct}%`); $("#con-percent").text(`${pct}%`);
+                
+                // Stop tracking automatically if engine finishes or gets killed
+                if (job.status === "finished" || job.status === "killed") {
+                    engineRunning = false; clearInterval(liveTracker);
+                    $("#dmall-status-text").text(job.status === "finished" ? "Campaign Complete." : "Engine Halted.");
+                    addHistoryRecord(job.status === "finished" ? 'finished' : 'paused', job.serverId || "Unknown", p.sent, p.failed, left > 0 ? left : 0);
+                }
+            }
+        } catch(e) {} // Ignores network spikes
+    }, 3000);
+}
 
 async function executeDmall() {
-    if(engineRunning) return alert("A campaign is already processing offline!");
+    // Better warning message
+    if(engineRunning) return alert("⚠️ A campaign is already running! Check your Logs tab. You must stop it before starting a new one.");
     
     let group = $("#launch-token-group").val(); let serverId = $("#target-server").val();
     let autoLeave = $("#auto-leave-toggle").is(":checked"); let embedIdx = $("#launch-embed").val();
@@ -450,50 +506,18 @@ async function executeDmall() {
         delay: dmDelay, blacklist: blacklistDB
     };
 
-    switchTab('tab-console'); switchConsoleView('live');
     $("#dmall-status-text").text("Pushing to 24/7 Node.js Engine...");
-    
-    // Reset UI to 0 instead of "OFFLINE"
     $("#con-sent").text("0"); $("#con-failed").text("0"); $("#con-left").text("Calc..."); $("#con-percent").text("0%"); $("#con-progress").css("width", "0%");
 
     try {
         await fetch('/api/app', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'launch_campaign', data: launchOrder }) });
         alert("✅ Campaign successfully pushed to the backend! You can safely close your browser or turn off your PC.");
-        $("#dmall-status-text").text("Engine Running Offline 24/7..."); engineRunning = true;
         
-        // --- LIVE TRACKER (Pings Database every 3 Seconds) ---
-        if(liveTracker) clearInterval(liveTracker);
-        liveTracker = setInterval(async () => {
-            if(!engineRunning) return clearInterval(liveTracker);
-            try {
-                let res = await fetch('/api/app', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'get_spy_data' }) });
-                let db = await res.json();
-                let job = db.cloudData ? db.cloudData.activeJob : null;
-                
-                if (job && job.progress) {
-                    let p = job.progress;
-                    $("#con-sent").text(p.sent);
-                    $("#con-failed").text(p.failed);
-                    
-                    let left = p.total - (p.sent + p.failed);
-                    $("#con-left").text(left > 0 ? left : 0);
-                    
-                    let pct = Math.floor(((p.sent + p.failed) / p.total) * 100) || 0;
-                    $("#con-progress").css("width", `${pct}%`); $("#con-percent").text(`${pct}%`);
-                    
-                    // Stop tracking automatically if engine finishes
-                    if (job.status === "finished" || job.status === "killed") {
-                        engineRunning = false; clearInterval(liveTracker);
-                        $("#dmall-status-text").text(job.status === "finished" ? "Campaign Complete." : "Engine Halted.");
-                        addHistoryRecord(job.status === "finished" ? 'finished' : 'paused', serverId, p.sent, p.failed, left > 0 ? left : 0);
-                    }
-                }
-            } catch(e) {} // Ignores network spikes
-        }, 3000);
-
+        // Triggers the auto-resume function we just built
+        startLiveTracking(); 
+        
     } catch(e) { alert("Failed to connect to the database."); $("#dmall-status-text").text("Launch Failed."); }
 }
-
 async function stopDmall() { 
     $("#dmall-status-text").text("Sending Kill Switch...");
     try {
