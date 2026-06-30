@@ -421,56 +421,66 @@ async function executeDmall() {
 
     $("#dmall-status-text").text("Firing Payloads..."); 
     
-    // 2. SENDING DMs (REAL DISCORD API)
-    for(let i=0; i<targets.length; i++) {
+        // 2. SENDING DMs (REAL DISCORD API) - CONCURRENT CHUNKING
+    for(let i = 0; i < targets.length; i += concurrencyLimit) {
         if(engineStop) {
             localStorage.setItem('nosify_dm_targets_' + serverId, JSON.stringify(targets.slice(i)));
             break;
         }
         
-        let targetId = targets[i];
-        let botToken = bots[i % bots.length].token; // Rotate bots evenly
+        // Slice a chunk of targets based on your Concurrency Limit setting
+        let chunk = targets.slice(i, i + concurrencyLimit);
         
-        // A: Open DM
-        let channelRes = await discordProxy('https://discord.com/api/v10/users/@me/channels', 'POST', botToken, { recipient_id: targetId });
+        // Fire the entire chunk simultaneously across all available bots
+        await Promise.all(chunk.map(async (targetId, chunkIdx) => {
+            let globalIdx = i + chunkIdx;
+            let botToken = bots[globalIdx % bots.length].token; // Rotates bots perfectly
+            
+            if (blacklistDB.includes(targetId)) return;
+            
+            let channelRes = await discordProxy('https://discord.com/api/v10/users/@me/channels', 'POST', botToken, { recipient_id: targetId });
+            
+            if (channelRes.ok) {
+                let channelData = await channelRes.json();
+                let finalPayloadStr = rawEmbedJson.replace(/{userid}/g, targetId).replace(/{usermention}/g, `<@${targetId}>`);
+                
+                let msgRes = await discordProxy(`https://discord.com/api/v10/channels/${channelData.id}/messages`, 'POST', botToken, JSON.parse(finalPayloadStr));
+                
+                // NO SPAM - JUST STATS
+                if (msgRes.ok) { 
+                    cSent++; statsDB.sent++; 
+                } else { 
+                    cFail++; statsDB.failed++; 
+                }
+            } else {
+                cFail++; statsDB.failed++; 
+            }
+        }));
         
-        if (channelRes.ok) {
-            let channelData = await channelRes.json();
-            let channelId = channelData.id;
-            
-            let finalPayloadStr = rawEmbedJson.replace(/{userid}/g, targetId).replace(/{usermention}/g, `<@${targetId}>`);
-            
-            // B: Send Message
-            let msgRes = await discordProxy(`https://discord.com/api/v10/channels/${channelId}/messages`, 'POST', botToken, JSON.parse(finalPayloadStr));
-            
-            if (msgRes.ok) { cSent++; logTerminalOutput(`[Bot ${i%bots.length + 1}] ✅ Delivered to <@${targetId}>`, "win"); } 
-            else { cFail++; logTerminalOutput(`[Bot ${i%bots.length + 1}] ❌ Network Drop (403/Forbidden) to ${targetId}`, "err"); }
-        } else {
-            cFail++; logTerminalOutput(`[Bot ${i%bots.length + 1}] ❌ Failed to open DM with ${targetId}`, "err");
-        }
-        
-        // Update Live Stats
+        // Batch Update UI & Memory after the chunk finishes
         $("#con-sent").text(cSent); $("#con-failed").text(cFail);
-        let remaining = targets.length - (i + 1);
+        
+        let processedAmount = Math.min((i + concurrencyLimit), targets.length);
+        let remaining = targets.length - processedAmount;
         $("#con-left").text(remaining);
         
-        let pct = Math.floor(((i + 1) / targets.length) * 100);
+        let pct = Math.floor((processedAmount / targets.length) * 100);
         $("#con-progress").css("width", `${pct}%`); $("#con-percent").text(`${pct}%`);
 
-        // Global DB Stats
-        statsDB.sent++; if (!channelRes.ok) statsDB.failed++;
-        localStorage.setItem('nosify_dm_stats', JSON.stringify(statsDB)); updateStats();
+        localStorage.setItem('nosify_dm_stats', JSON.stringify(statsDB)); 
+        updateStats();
+        localStorage.setItem('nosify_dm_targets_' + serverId, JSON.stringify(targets.slice(processedAmount)));
 
-        // Update memory so reload resumes perfectly
-        localStorage.setItem('nosify_dm_targets_' + serverId, JSON.stringify(targets.slice(i + 1)));
-
+        // Wait the Delay setting between batches to avoid IP bans
         await new Promise(r => setTimeout(r, dmDelay)); 
     }
+
+
     
     if (!engineStop) {
         $("#dmall-status-text").text("Campaign Complete.");
         $("#con-left").text("0"); $("#con-progress").css("width", "100%"); $("#con-percent").text("100%");
-        logTerminalOutput(`Sequence Complete. Targets exhausted.`, "win");
+        logTerminalOutput(`✅ CAMPAIGN FINISHED | Target Server: ${serverId} | Successfully Sent: ${cSent} | Failed: ${cFail}`, "win");
         localStorage.removeItem('nosify_dm_targets_' + serverId); // Wipe memory cleanly
         checkServerMemory(); // Refresh the UI badge
         
@@ -494,9 +504,11 @@ function stopDmall() {
     if(!engineRunning) return;
     engineStop = true; 
     $("#dmall-status-text").text("System Paused.");
-    logTerminalOutput("EMERGENCY STOP TRIGGERED. Progress saved to local memory.", "err"); 
+    let cS = $("#con-sent").text(); let cF = $("#con-failed").text();
+    logTerminalOutput(`🛑 CAMPAIGN PAUSED | Sent: ${cS} | Failed: ${cF} | Progress safely saved to memory.`, "err"); 
     checkServerMemory(); // Refresh UI badge
 }
+
 
 // --- ADMIN PANEL API ---
 async function adminAction(action, payload) {
