@@ -134,24 +134,42 @@ function addToken() {
     let rawInput = $("#add-token-val").val().trim(); 
     let groupName = $("#add-token-group").val().trim() || "Default Folder";
     if (!rawInput) return;
+    
     let tokensToAdd = [];
     try {
         let parsed = JSON.parse(rawInput);
         if (Array.isArray(parsed)) tokensToAdd = parsed; else tokensToAdd = [rawInput];
-    } catch(e) { tokensToAdd = rawInput.split(/[\n\r\s,]+/).map(t => t.replace(/["']/g, "").trim()); }
+    } catch(e) { 
+        tokensToAdd = rawInput.split(/[\n\r\s,]+/).map(t => t.replace(/["']/g, "").trim()); 
+    }
 
     let addedCount = 0;
     tokensToAdd.forEach(t => {
-        if (t.length > 20 && !tokensDB.find(x => x.token === t)) {
-            tokensDB.push({ token: t, group: groupName, status: 'Not Checked', name: 'Unknown Bot', id: null }); addedCount++;
+        if (t.length > 20) {
+            let existingToken = tokensDB.find(x => x.token === t);
+            
+            if (!existingToken) {
+                // It's a brand new token, add it normally
+                tokensDB.push({ token: t, group: groupName, status: 'Not Checked', name: 'Unknown Bot', id: null }); 
+                addedCount++;
+            } else if (existingToken.status === "Deleted by User 🗑️") {
+                // It was deleted before! Bring it back to life in the new folder.
+                existingToken.group = groupName;
+                existingToken.status = 'Not Checked';
+                addedCount++;
+            }
         }
     });
 
     if (addedCount > 0) {
         saveTokens();
-        $("#add-token-val").val(""); renderTokens(); alert(`Imported ${addedCount} tokens!`);
-    } else alert("No valid new tokens found.");
+        $("#add-token-val").val(""); renderTokens(); 
+        alert(`Successfully imported/restored ${addedCount} tokens!`);
+    } else {
+        alert("No valid new tokens found. (Make sure they are real tokens over 20 characters and aren't already active in a folder).");
+    }
 }
+
 
 function deleteToken(i) { 
     tokensDB[i].status = "Deleted by User 🗑️";
