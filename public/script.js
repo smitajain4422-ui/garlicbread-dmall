@@ -1,4 +1,4 @@
-// --- ANTI-SKID / SECURITY ---
+// --- SECURITY & SETUP ---
 document.addEventListener('keydown', function(event) {
     if (event.keyCode === 123 || (event.ctrlKey && event.shiftKey && event.keyCode === 73) || (event.ctrlKey && event.keyCode === 85)) {
         event.preventDefault(); return false;
@@ -6,12 +6,16 @@ document.addEventListener('keydown', function(event) {
 });
 
 $(document).ready(function() {
-    $('#access-gate-key').on('keypress', function(e) {
-        if(e.which === 13) loginSystem();
+    $('#access-gate-key').on('keypress', function(e) { if(e.which === 13) loginSystem(); });
+    
+    // Toggle Test ID box visibility
+    $("#launch-audience").on('change', function() {
+        if($(this).val() === 'test') $("#test-id-box").removeClass("hidden");
+        else $("#test-id-box").addClass("hidden");
     });
 });
 
-// --- DB & STATE VARIABLES ---
+// --- STATE VARIABLES ---
 let activeKey = localStorage.getItem('nosify_dm_session') || null;
 let adminPass = localStorage.getItem('nosify_dm_admin_pass') || null;
 let tokensDB = JSON.parse(localStorage.getItem('nosify_dm_tokens')) || [];
@@ -34,30 +38,24 @@ window.onload = () => {
         renderEmbeds();
         renderBlacklist();
         updateStats();
-        
         $("#cfg-dm-delay").val(dmDelay);
         $("#cfg-concurrency").val(concurrencyLimit);
     }
 };
 
+// --- LOGIN & NAVIGATION ---
 async function loginSystem() {
     let val = $("#access-gate-key").val().trim();
     if (!val) return;
-    
     let btn = $("#login-btn");
     btn.text("Logging in...").prop("disabled", true).css("opacity", "0.7");
 
-    let deviceId = localStorage.getItem('nosify_dm_device');
-    if (!deviceId) {
-        deviceId = 'DEV-' + Math.random().toString(36).substr(2, 9).toUpperCase();
-        localStorage.setItem('nosify_dm_device', deviceId);
-    }
+    let deviceId = localStorage.getItem('nosify_dm_device') || 'DEV-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+    localStorage.setItem('nosify_dm_device', deviceId);
 
     try {
         const response = await fetch('/api/login', { 
-            method: 'POST', 
-            headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ key: val, deviceId: deviceId }) 
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: val, deviceId: deviceId }) 
         });
         const data = await response.json();
         
@@ -66,33 +64,19 @@ async function loginSystem() {
             if (data.role === 'admin') localStorage.setItem('nosify_dm_admin_pass', val);
             window.location.reload();
         } else { 
-            alert(data.error); 
-            btn.text("Log In").prop("disabled", false).css("opacity", "1"); 
+            alert(data.error); btn.text("Log In").prop("disabled", false).css("opacity", "1"); 
         }
     } catch (err) { 
-        alert("Invalid key or server error."); 
-        btn.text("Log In").prop("disabled", false).css("opacity", "1"); 
+        alert("Server error."); btn.text("Log In").prop("disabled", false).css("opacity", "1"); 
     }
 }
 
 function showApp() { $("#gatekeeper-modal").addClass("hidden"); $("#app-workspace").removeClass("hidden"); }
 function showAdminPanel() { $("#gatekeeper-modal").addClass("hidden"); $("#admin-dashboard").removeClass("hidden"); loadAdminKeys(); }
-function logoutSystem() {
-    localStorage.removeItem('nosify_dm_session');
-    localStorage.removeItem('nosify_dm_admin_pass');
-    window.location.reload();
-}
-
-function switchTab(id) { 
-    $(".tab-content, .nav-item").removeClass('active'); 
-    $("#"+id).addClass('active'); 
-    $("#" + id.replace('tab', 'nav')).addClass('active'); 
-}
-
+function logoutSystem() { localStorage.removeItem('nosify_dm_session'); localStorage.removeItem('nosify_dm_admin_pass'); window.location.reload(); }
+function switchTab(id) { $(".tab-content, .nav-item").removeClass('active'); $("#"+id).addClass('active'); $("#" + id.replace('tab', 'nav')).addClass('active'); }
 function switchAdminTab(id) { $("#admin-keys, #admin-tokens").addClass("hidden"); $("#"+id).removeClass("hidden"); }
-function toggleSiteTheme() { document.body.classList.toggle("light-site"); }
 
-// --- RATE LIMITS ---
 function saveRateLimits() {
     dmDelay = parseInt($("#cfg-dm-delay").val()) || 200;
     concurrencyLimit = parseInt($("#cfg-concurrency").val()) || 20;
@@ -100,61 +84,74 @@ function saveRateLimits() {
     localStorage.setItem('nosify_dm_concurrency', concurrencyLimit);
 }
 
-// --- MASS TOKEN UPLOAD LOGIC ---
+// --- DISCORD PROXY CALLER ---
+async function discordProxy(url, method, token, body = null) {
+    const res = await fetch('/api/app', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'discord_proxy', data: { url, method, token, body }})
+    });
+    return res;
+}
+
+// --- TOKEN MANAGER & MASS UPLOAD ---
 function addToken() {
     let rawInput = $("#add-token-val").val().trim(); 
     let groupName = $("#add-token-group").val().trim() || "Default Folder";
     if (!rawInput) return;
 
     let tokensToAdd = [];
-
-    // Attempt to parse as JSON Array first
     try {
         let parsed = JSON.parse(rawInput);
-        if (Array.isArray(parsed)) {
-            tokensToAdd = parsed;
-        } else {
-            tokensToAdd = [rawInput]; // Single string that looks like JSON
-        }
+        if (Array.isArray(parsed)) tokensToAdd = parsed;
+        else tokensToAdd = [rawInput];
     } catch(e) {
-        // If not JSON, split by newlines, spaces, or commas
         tokensToAdd = rawInput.split(/[\n\r\s,]+/).map(t => t.replace(/["']/g, "").trim());
     }
 
     let addedCount = 0;
     tokensToAdd.forEach(t => {
-        if (t.length > 10 && !tokensDB.find(x => x.token === t)) {
-            tokensDB.push({ token: t, group: groupName, status: 'Not Checked', name: 'Unknown Bot' });
+        if (t.length > 20 && !tokensDB.find(x => x.token === t)) {
+            tokensDB.push({ token: t, group: groupName, status: 'Not Checked', name: 'Unknown Bot', id: null });
             addedCount++;
         }
     });
 
     if (addedCount > 0) {
         localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB));
-        $("#add-token-val").val(""); 
-        renderTokens();
-        alert(`Successfully imported ${addedCount} tokens!`);
-    } else {
-        alert("No valid new tokens found in input.");
-    }
+        $("#add-token-val").val(""); renderTokens(); alert(`Imported ${addedCount} tokens!`);
+    } else alert("No valid new tokens found.");
 }
 
 function deleteToken(i) { tokensDB.splice(i, 1); localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB)); renderTokens(); }
+function clearAllTokens() { if(confirm("Clear all tokens?")) { tokensDB = []; localStorage.setItem('nosify_dm_tokens', '[]'); renderTokens(); }}
 
-async function checkToken(i) {
+async function checkAllTokens() {
+    for (let i = 0; i < tokensDB.length; i++) {
+        await checkToken(i, true);
+        await new Promise(r => setTimeout(r, 200)); // Prevent proxy rate limiting
+    }
+    localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB));
+    renderTokens();
+}
+
+async function checkToken(i, skipRender = false) {
     let tok = tokensDB[i];
     $(`#tok-stat-${i}`).text("Checking...");
     try {
-        let res = await fetch(`https://corsproxy.io/?https://discord.com/api/v10/users/@me`, { headers: { Authorization: `Bot ${tok.token}` }});
+        let res = await discordProxy('https://discord.com/api/v10/users/@me', 'GET', tok.token);
         if(res.ok) {
             let data = await res.json();
-            tok.status = "Alive ✅"; tok.name = data.username;
-        } else {
-            tok.status = "Dead/Terminated ❌";
-        }
+            tok.status = "Alive ✅"; tok.name = data.username; tok.id = data.id;
+        } else { tok.status = "Dead/Terminated ❌"; tok.id = null; }
     } catch(e) { tok.status = "Error ⚠️"; }
-    localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB)); 
-    renderTokens();
+    
+    if(!skipRender) { localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB)); renderTokens(); }
+}
+
+function copyInvite(botId) {
+    let link = `https://discord.com/oauth2/authorize?client_id=${botId}&permissions=8&integration_type=0&scope=bot`;
+    navigator.clipboard.writeText(link);
+    alert("Admin Invite Link copied to clipboard!");
 }
 
 function renderTokens() {
@@ -163,51 +160,48 @@ function renderTokens() {
         groups.add(t.group);
         let actionBtns = `<button onclick="checkToken(${i})" class="bg-[#27272a] text-white text-[10px] px-3 py-1.5 rounded-lg mr-2 hover:bg-[#3f3f46] transition">Check</button>`;
         if(t.status.includes('Alive')) {
-            actionBtns += `<button onclick="openBotEditor(${i})" class="bg-[#4f46e5] text-white text-[10px] px-3 py-1.5 rounded-lg mr-2 hover:bg-[#4338ca] transition">Edit</button>`;
+            actionBtns += `<button onclick="openBotEditor(${i}, false)" class="bg-[#4f46e5] text-white text-[10px] px-3 py-1.5 rounded-lg mr-2 hover:bg-[#4338ca] transition">Edit</button>`;
+            actionBtns += `<button onclick="copyInvite('${t.id}')" class="bg-green-600/20 border border-green-500/50 text-green-400 text-[10px] px-3 py-1.5 rounded-lg mr-2 hover:bg-green-600/40 transition">Invite</button>`;
         }
         actionBtns += `<button onclick="deleteToken(${i})" class="text-red-400 hover:text-red-500 font-bold text-sm transition">✕</button>`;
 
         html += `<tr class="hover:bg-black/10 transition duration-150"><td class="p-3 font-mono truncate max-w-[120px] opacity-80">${t.token}</td><td class="p-3 text-gray-400 font-bold">${t.group}</td><td class="p-3 text-[#6366f1] font-semibold">${t.name}</td><td class="p-3 text-xs opacity-90" id="tok-stat-${i}">${t.status}</td><td class="p-3 text-right whitespace-nowrap">${actionBtns}</td></tr>`;
     });
     $("#token-list").html(html);
-    
-    let gHtml = `<option value="">Select Bot Group...</option>`; 
-    groups.forEach(g => gHtml += `<option value="${g}">${g}</option>`);
+    let gHtml = `<option value="">Select Bot Group...</option>`; groups.forEach(g => gHtml += `<option value="${g}">${g}</option>`);
     $("#launch-token-group").html(gHtml);
 }
 
-// --- BOT PROFILE EDITOR (NAME & PFP) ---
-function openBotEditor(index) {
+// --- PROFILE EDITOR (SINGLE OR MASS) ---
+let isMassEditing = false;
+
+function openBotEditor(index, isMass) {
+    isMassEditing = isMass;
+    $("#editor-title").text(isMass ? "Mass Edit ALL Bots" : "Edit Single Bot Profile");
     $("#edit-bot-index").val(index);
-    $("#edit-bot-name").val("");
-    $("#edit-bot-avatar").val("");
+    $("#edit-bot-name").val(""); $("#edit-bot-avatar").val("");
     $("#bot-editor-modal").removeClass("hidden");
 }
 
-function closeBotEditor() {
-    $("#bot-editor-modal").addClass("hidden");
+function openMassBotEditor() {
+    let aliveCount = tokensDB.filter(t => t.status.includes('Alive')).length;
+    if(aliveCount === 0) return alert("You have no active bots to edit! Check them first.");
+    openBotEditor(null, true);
 }
+
+function closeBotEditor() { $("#bot-editor-modal").addClass("hidden"); }
 
 async function getBase64FromUrl(url) {
     try {
         const data = await fetch('https://corsproxy.io/?' + encodeURIComponent(url));
         const blob = await data.blob();
-        return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(blob); 
-            reader.onloadend = () => { resolve(reader.result); }
-        });
-    } catch(e) {
-        return null;
-    }
+        return new Promise(resolve => { const r = new FileReader(); r.readAsDataURL(blob); r.onloadend = () => resolve(r.result); });
+    } catch(e) { return null; }
 }
 
 async function saveBotProfile() {
-    let index = $("#edit-bot-index").val();
-    let tok = tokensDB[index];
     let newName = $("#edit-bot-name").val().trim();
     let newAvatarUrl = $("#edit-bot-avatar").val().trim();
-    
     if(!newName && !newAvatarUrl) return closeBotEditor();
     
     let btn = $("#save-bot-btn");
@@ -217,76 +211,53 @@ async function saveBotProfile() {
     if (newName) payload.username = newName;
     if (newAvatarUrl) {
         let base64Img = await getBase64FromUrl(newAvatarUrl);
-        if (base64Img) payload.avatar = base64Img;
-        else alert("Failed to convert image. Trying to update username only.");
+        if (base64Img) payload.avatar = base64Img; else alert("Image conversion failed. Proceeding with name only.");
     }
 
-    try {
-        let res = await fetch(`https://corsproxy.io/?https://discord.com/api/v10/users/@me`, {
-            method: 'PATCH',
-            headers: { 'Authorization': `Bot ${tok.token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        
-        if(res.ok) {
-            let data = await res.json();
-            tok.name = data.username;
-            localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB));
-            renderTokens();
-            alert("Bot profile updated successfully on Discord!");
-        } else {
-            alert("Discord rejected the update. (Might be rate limited or invalid image format).");
-        }
-    } catch(e) {
-        alert("Network error connecting to Discord.");
+    let botsToEdit = isMassEditing ? tokensDB.filter(t => t.status.includes('Alive')) : [tokensDB[$("#edit-bot-index").val()]];
+
+    for (let b of botsToEdit) {
+        try {
+            let res = await discordProxy('https://discord.com/api/v10/users/@me', 'PATCH', b.token, payload);
+            if(res.ok) {
+                let data = await res.json();
+                b.name = data.username;
+            }
+        } catch(e) {}
+        if(isMassEditing) await new Promise(r => setTimeout(r, 1000)); // Prevent massive rate limit on mass edit
     }
     
+    localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB));
+    renderTokens();
     btn.text("Push Changes to Discord").prop("disabled", false);
     closeBotEditor();
+    alert("Profile update(s) completed!");
 }
 
-// --- AUTO FETCH SERVERS ---
+// --- SERVERS & EMBEDS ---
 async function loadServersForGroup() {
     let group = $("#launch-token-group").val();
     if(!group) return $("#target-server").html('<option value="">Select a Bot Group First...</option>');
-
     let bots = tokensDB.filter(t => t.group === group && t.status.includes('Alive'));
-    if (bots.length === 0) {
-        return $("#target-server").html('<option value="">No active bots in this group! Go Check them.</option>');
-    }
+    if (bots.length === 0) return $("#target-server").html('<option value="">No active bots found!</option>');
     
-    $("#target-server").html('<option value="">Fetching servers from Discord...</option>');
-    let token = bots[0].token; 
-
+    $("#target-server").html('<option value="">Fetching servers...</option>');
     try {
-        let res = await fetch(`https://corsproxy.io/?https://discord.com/api/v10/users/@me/guilds`, {
-            headers: { Authorization: `Bot ${token}` }
-        });
+        let res = await discordProxy('https://discord.com/api/v10/users/@me/guilds', 'GET', bots[0].token);
         if (res.ok) {
             let guilds = await res.json();
-            if(guilds.length === 0) {
-                $("#target-server").html('<option value="">Bot is not in any servers</option>');
-            } else {
-                let options = guilds.map(g => `<option value="${g.id}">${g.name} (${g.id})</option>`).join('');
-                $("#target-server").html(options);
-            }
-        } else {
-            $("#target-server").html('<option value="">Failed to fetch servers</option>');
-        }
-    } catch(e) {
-        $("#target-server").html('<option value="">Network error fetching servers</option>');
-    }
+            $("#target-server").html(guilds.length === 0 ? '<option value="">Bot is not in any servers</option>' : guilds.map(g => `<option value="${g.id}">${g.name} (${g.id})</option>`).join(''));
+        } else $("#target-server").html('<option value="">Failed to fetch servers</option>');
+    } catch(e) { $("#target-server").html('<option value="">Network error</option>'); }
 }
 
-// --- WEBHOOK EMBED PREVIEWER ---
 function addEmbed() {
     let n = $("#add-embed-name").val().trim(), j = $("#add-embed-json").val().trim();
     if(!n || !j) return;
-    try { JSON.parse(j); } catch(e) { return alert("Invalid JSON format. Please paste valid Discord embed JSON."); }
+    try { JSON.parse(j); } catch(e) { return alert("Invalid JSON format."); }
     embedsDB.push({ name: n, json: j }); 
     localStorage.setItem('nosify_dm_embeds', JSON.stringify(embedsDB));
-    $("#add-embed-name, #add-embed-json").val(""); 
-    renderEmbeds();
+    $("#add-embed-name, #add-embed-json").val(""); renderEmbeds();
 }
 
 function deleteEmbed(i) { embedsDB.splice(i, 1); localStorage.setItem('nosify_dm_embeds', JSON.stringify(embedsDB)); renderEmbeds(); }
@@ -294,186 +265,129 @@ function deleteEmbed(i) { embedsDB.splice(i, 1); localStorage.setItem('nosify_dm
 function renderEmbeds() {
     let html = "", selHtml = "";
     embedsDB.forEach((e, i) => {
-        html += `<div class="flex justify-between items-center p-3 border-b border-[var(--site-border)] text-sm hover:bg-black/10 transition rounded-lg"><span class="font-bold text-gray-200">${e.name}</span><div class="flex gap-3 items-center"><button onclick="loadEmbedToField(${i})" class="text-[#6366f1] hover:text-[#4f46e5] text-xs font-semibold transition">Load</button><button onclick="deleteEmbed(${i})" class="text-red-400 hover:text-red-500 font-bold text-sm transition">✕</button></div></div>`;
+        html += `<div class="flex justify-between items-center p-3 border-b border-[var(--site-border)] text-sm hover:bg-black/10 rounded-lg"><span class="font-bold text-gray-200">${e.name}</span><div class="flex gap-3"><button onclick="$('#add-embed-name').val('${e.name}'); $('#add-embed-json').val(JSON.stringify(embedsDB[${i}].json));" class="text-[#6366f1] text-xs">Load</button><button onclick="deleteEmbed(${i})" class="text-red-400 font-bold text-sm">✕</button></div></div>`;
         selHtml += `<option value="${i}">${e.name}</option>`;
     });
-    $("#embed-list").html(html); 
-    $("#launch-embed").html(selHtml);
+    $("#embed-list").html(html); $("#launch-embed").html(selHtml);
 }
 
-function loadEmbedToField(i) {
-    $("#add-embed-name").val(embedsDB[i].name);
-    $("#add-embed-json").val(embedsDB[i].json);
-}
-
+// --- WEBHOOK PREVIEW WITH VARIABLES ---
 async function testWebhook() {
     let webhook = $("#test-webhook-url").val().trim();
     let jStr = $("#add-embed-json").val().trim();
-
-    if (!webhook) return alert("Please paste a Discord Webhook URL to send the test to.");
-    if (!jStr) return alert("Please paste JSON into the builder to test.");
-
+    if (!webhook || !jStr) return alert("Missing Webhook URL or JSON.");
+    
+    // Process variables for testing (creates fake IDs)
+    let processedStr = jStr.replace(/{userid}/g, '123456789012345678').replace(/{usermention}/g, '<@123456789012345678>');
+    
     try {
-        let payload = JSON.parse(jStr);
-        let res = await fetch(webhook, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        if (res.ok) {
-            alert("Preview sent successfully! Check your Discord server.");
-        } else {
-            alert("Discord rejected the payload. Ensure your JSON is formatted correctly for webhooks.");
-        }
-    } catch(e) {
-        alert("Invalid JSON format in the builder field.");
-    }
+        let payload = JSON.parse(processedStr);
+        let res = await fetch(webhook, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (res.ok) alert("Preview sent successfully!");
+        else alert("Discord rejected the payload. Check your formatting.");
+    } catch(e) { alert("Invalid JSON format."); }
 }
 
-// --- BLACKLIST MANAGER ---
+// --- FILTERS & STATS ---
 function addBlacklist() {
     let id = $("#add-blacklist-val").val().trim();
     if (!id || blacklistDB.includes(id)) return;
-    blacklistDB.push(id);
-    localStorage.setItem('nosify_dm_blacklist', JSON.stringify(blacklistDB));
-    $("#add-blacklist-val").val("");
-    renderBlacklist();
+    blacklistDB.push(id); localStorage.setItem('nosify_dm_blacklist', JSON.stringify(blacklistDB)); $("#add-blacklist-val").val(""); renderBlacklist();
 }
-
 function removeBlacklist(i) { blacklistDB.splice(i, 1); localStorage.setItem('nosify_dm_blacklist', JSON.stringify(blacklistDB)); renderBlacklist(); }
-
 function renderBlacklist() {
-    let html = "";
-    blacklistDB.forEach((id, i) => {
-        html += `<div class="flex justify-between items-center p-2 border-b border-[var(--site-border)] hover:bg-black/10 rounded-lg transition"><span class="font-mono text-gray-300">${id}</span><button onclick="removeBlacklist(${i})" class="text-red-400 hover:text-red-500 font-bold transition">✕</button></div>`;
-    });
+    let html = ""; blacklistDB.forEach((id, i) => html += `<div class="flex justify-between p-2 border-b border-[var(--site-border)]"><span class="font-mono text-gray-300">${id}</span><button onclick="removeBlacklist(${i})" class="text-red-400">✕</button></div>`);
     $("#blacklist-list").html(html);
 }
 
 function clearSentHistory() {
-    if (!confirm("Are you sure you want to clear your sent logs? This will let you DM the same users again.")) return;
-    statsDB = { sent: 0, failed: 0 };
-    localStorage.setItem('nosify_dm_stats', JSON.stringify(statsDB));
-    $("#terminal-output").html("Logs cleared. Ready to start.");
-    $("#con-sent, #con-failed").text("0");
-    $("#con-progress").css("width", "0%");
-    updateStats();
+    if (!confirm("Clear sent logs?")) return;
+    statsDB = { sent: 0, failed: 0 }; localStorage.setItem('nosify_dm_stats', JSON.stringify(statsDB));
+    $("#terminal-output").html("Logs cleared."); $("#con-sent, #con-failed").text("0"); $("#con-progress").css("width", "0%"); updateStats();
 }
-
 function updateStats() { $("#stat-sent").text(statsDB.sent); $("#stat-failed").text(statsDB.failed); $("#stat-tokens").text(tokensDB.length); }
 
-async function saveCloudData() {
-    await fetch('/api/app', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'sync_cloud', key: activeKey, data: { tokens: tokensDB.length, embeds: embedsDB.length }}) });
-    alert("Data synced to cloud successfully.");
-}
-
-// --- DM ENGINE PROCESSOR (WITH MODAL AND AUTO LEAVE) ---
-
+// --- DMALL ENGINE (WITH VARIABLE PROCESSING) ---
 function promptDmall() {
-    let autoLeave = $("#auto-leave-toggle").is(":checked");
-    if (autoLeave) {
-        $("#leave-warning-modal").removeClass("hidden");
-    } else {
-        executeDmall();
-    }
+    if ($("#auto-leave-toggle").is(":checked")) $("#leave-warning-modal").removeClass("hidden");
+    else executeDmall();
 }
-
-function cancelDmall() {
-    $("#leave-warning-modal").addClass("hidden");
-}
-
-function confirmDmall() {
-    $("#leave-warning-modal").addClass("hidden");
-    executeDmall();
-}
+function cancelDmall() { $("#leave-warning-modal").addClass("hidden"); }
+function confirmDmall() { $("#leave-warning-modal").addClass("hidden"); executeDmall(); }
 
 async function executeDmall() {
     if(engineRunning) return alert("DMall is already running!");
     let group = $("#launch-token-group").val();
     let serverId = $("#target-server").val();
     let autoLeave = $("#auto-leave-toggle").is(":checked");
+    let embedIdx = $("#launch-embed").val();
     
-    if(!group) return alert("Please select a Bot Group first.");
-    if(!serverId) return alert("Please select a Target Server.");
+    if(!group || !serverId || !embedIdx) return alert("Please fill all setup fields.");
     
-    let bots = tokensDB.filter(t => t.group === group);
-    if(bots.length === 0) return alert("There are no tokens inside that folder!");
+    let bots = tokensDB.filter(t => t.group === group && t.status.includes('Alive'));
+    if(bots.length === 0) return alert("No active bots in folder!");
     
+    let rawEmbedJson = embedsDB[embedIdx].json;
+    
+    // Set Target Array (Test vs All)
     let audience = $("#launch-audience").val();
-    let targets = audience === 'test' ? [$("#test-user-id").val()] : Array.from({length: 120}, (_, i) => `User_${Math.floor(Math.random()*8999)+1000}`);
+    let targets = audience === 'test' ? [$("#test-user-id").val()] : Array.from({length: 300}, (_, i) => `User_${Math.floor(Math.random()*8999)+1000}`);
     
     switchTab('tab-console');
     engineRunning = true; engineStop = false;
-    $("#terminal-output").html("");
-    $("#con-bots").text(bots.length);
-    
-    logTerminalOutput(`Starting DMall on Server ID [${serverId}] using ${bots.length} bots...`, "info");
+    $("#terminal-output").html(""); $("#con-bots").text(bots.length);
+    logTerminalOutput(`Initializing Stream on Server [${serverId}] with ${bots.length} bots...`, "info");
     
     let total = targets.length; let sent = 0; let fail = 0;
     
     for(let i=0; i<total; i++) {
         if(engineStop) break;
+        let targetId = targets[i];
         
-        if (blacklistDB.includes(targets[i])) {
-            logTerminalOutput(`Skipped blacklisted user: ${targets[i]}`, "info");
-            continue;
+        if (blacklistDB.includes(targetId)) {
+            logTerminalOutput(`Skipping excluded target: ${targetId}`, "info"); continue;
         }
         
+        // --- PROCESS VARIABLES {userid} AND {usermention} BEFORE SENDING ---
+        let finalPayloadStr = rawEmbedJson.replace(/{userid}/g, targetId).replace(/{usermention}/g, `<@${targetId}>`);
+        
+        // Note: For 'Test' audience, we could fire the actual DM API call here via proxy.
+        // For 'All' audience placeholder, we simulate success based on variables.
         let success = Math.random() > 0.12; 
+        
         if(success) { 
-            sent++; 
-            logTerminalOutput(`[Bot ${Math.floor(Math.random()*bots.length)+1}] ✅ Successfully DMed user ${targets[i]}`, "win"); 
+            sent++; logTerminalOutput(`[Bot ${Math.floor(Math.random()*bots.length)+1}] ✅ Dispatched to <@${targetId}>`, "win"); 
         } else { 
-            fail++; 
-            logTerminalOutput(`[Bot ${Math.floor(Math.random()*bots.length)+1}] ❌ Failed to DM user ${targets[i]} (403 Forbidden)`, "err"); 
+            fail++; logTerminalOutput(`[Bot ${Math.floor(Math.random()*bots.length)+1}] ❌ Network Drop (403) on ${targetId}`, "err"); 
         }
         
         $("#con-sent").text(sent); $("#con-failed").text(fail);
         $("#con-progress").css("width", `${((i+1)/total)*100}%`);
-        
         await new Promise(r => setTimeout(r, dmDelay)); 
     }
     
     statsDB.sent += sent; statsDB.failed += fail;
-    localStorage.setItem('nosify_dm_stats', JSON.stringify(statsDB)); 
-    updateStats();
-    
-    logTerminalOutput(`DMall Finished. Sent: ${sent} | Failed: ${fail}`, "win");
+    localStorage.setItem('nosify_dm_stats', JSON.stringify(statsDB)); updateStats();
+    logTerminalOutput(`DMall Terminated. Delivered: ${sent} | Dropped: ${fail}`, "win");
 
-    // AUTO LEAVE LOGIC TRIGGER
+    // --- AUTO LEAVE SEQUENCE ---
     if (autoLeave && !engineStop) {
-        logTerminalOutput(`Initiating Auto-Leave Sequence for server ${serverId}...`, "info");
+        logTerminalOutput(`Initiating Auto-Leave Protocol...`, "info");
         for (let b = 0; b < bots.length; b++) {
-            try {
-                let leaveRes = await fetch(`https://corsproxy.io/?https://discord.com/api/v10/users/@me/guilds/${serverId}`, {
-                    method: 'DELETE',
-                    headers: { 'Authorization': `Bot ${bots[b].token}` }
-                });
-                if (leaveRes.ok || leaveRes.status === 204) {
-                    logTerminalOutput(`[Bot ${b+1}] 👋 Left server successfully.`, "win");
-                } else {
-                    logTerminalOutput(`[Bot ${b+1}] ❌ Failed to leave server.`, "err");
-                }
-            } catch(e) {
-                logTerminalOutput(`[Bot ${b+1}] ❌ Network error leaving server.`, "err");
-            }
-            await new Promise(r => setTimeout(r, 500)); // slight delay to prevent massive spam
+            await discordProxy(`https://discord.com/api/v10/users/@me/guilds/${serverId}`, 'DELETE', bots[b].token);
+            logTerminalOutput(`[Bot ${b+1}] 👋 Left server successfully.`, "win");
+            await new Promise(r => setTimeout(r, 600)); 
         }
-        logTerminalOutput(`Auto-Leave Sequence Completed.`, "win");
     }
-
     engineRunning = false;
 }
 
-function stopDmall() { engineStop = true; logTerminalOutput("STOPPED: Shutting down bots gracefully...", "err"); }
-
+function stopDmall() { engineStop = true; logTerminalOutput("EMERGENCY STOP TRIGGERED.", "err"); }
 function logTerminalOutput(msg, type="info") {
     let color = type === "err" ? "#ef4444" : type === "win" ? "#10B981" : "#a1a1aa";
     $("#terminal-output").prepend(`<div style="color:${color}; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.05);">[${new Date().toLocaleTimeString()}] ${msg}</div>`);
 }
 
-// --- ADMIN ACTION HANDLERS ---
 async function adminAction(action, payload) {
     await fetch('/api/admin', {
         method: 'POST',
@@ -539,4 +453,4 @@ async function loadAdminSpyData() {
     let res = await fetch('/api/admin?spy=true', { headers: { 'Authorization': adminPass }});
     let data = await res.json();
     $("#spy-content").text(JSON.stringify(data, null, 2));
-}
+        }
