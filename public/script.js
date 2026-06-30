@@ -1,8 +1,16 @@
-// --- SECURITY & SETUP ---
-window.onbeforeunload = function() {
-    if (engineRunning) return "DMall is running! If you close this, it will pause.";
-};
+// --- ANTI-SLEEP BACKGROUND WORKER ---
+// Keeps browser awake for token checking and mass edits
+const workerBlob = new Blob([`self.onmessage = function(e) { setTimeout(() => self.postMessage('wake_up'), e.data); };`], { type: 'application/javascript' });
+const antiSleepWorker = new Worker(URL.createObjectURL(workerBlob));
 
+function backgroundSafeSleep(ms) {
+    return new Promise(resolve => {
+        const handler = () => { antiSleepWorker.removeEventListener('message', handler); resolve(); };
+        antiSleepWorker.addEventListener('message', handler); antiSleepWorker.postMessage(ms);
+    });
+}
+
+// --- SECURITY & WARNINGS ---
 document.addEventListener('keydown', function(event) {
     if (event.keyCode === 123 || (event.ctrlKey && event.shiftKey && event.keyCode === 73) || (event.ctrlKey && event.keyCode === 85)) {
         event.preventDefault(); return false;
@@ -24,38 +32,18 @@ let tokensDB = JSON.parse(localStorage.getItem('nosify_dm_tokens')) || [];
 let embedsDB = JSON.parse(localStorage.getItem('nosify_dm_embeds')) || [];
 let blacklistDB = JSON.parse(localStorage.getItem('nosify_dm_blacklist')) || [];
 let statsDB = JSON.parse(localStorage.getItem('nosify_dm_stats')) || { sent: 0, failed: 0 };
-let terminalLogs = JSON.parse(localStorage.getItem('nosify_dm_logs')) || ["System Booted. Persistent logs active."];
+let runHistory = JSON.parse(localStorage.getItem('nosify_dm_history')) || [];
 
 let dmDelay = parseInt(localStorage.getItem('nosify_dm_delay')) || 200;
 let concurrencyLimit = parseInt(localStorage.getItem('nosify_dm_concurrency')) || 20;
 
 let engineRunning = false;
-let engineStop = false;
-let totalCampaignTargets = 0; // Tracks total original scraped size
-
-// --- ANTI-SLEEP BACKGROUND WORKER ---
-// Bypasses the browser freezing tabs when you switch away.
-const workerBlob = new Blob([`
-    self.onmessage = function(e) { setTimeout(() => self.postMessage('wake_up'), e.data); };
-`], { type: 'application/javascript' });
-const antiSleepWorker = new Worker(URL.createObjectURL(workerBlob));
-
-function backgroundSafeSleep(ms) {
-    return new Promise(resolve => {
-        const handler = () => {
-            antiSleepWorker.removeEventListener('message', handler);
-            resolve();
-        };
-        antiSleepWorker.addEventListener('message', handler);
-        antiSleepWorker.postMessage(ms);
-    });
-}
 
 window.onload = () => {
     if (activeKey === "SECURE_ADMIN_TOKEN") {
         showAdminPanel();
     } else if (activeKey) {
-        showApp(); renderTokens(); renderEmbeds(); renderBlacklist(); updateStats(); loadLogs();
+        showApp(); renderTokens(); renderEmbeds(); renderBlacklist(); updateStats(); renderHistory();
         $("#cfg-dm-delay").val(dmDelay); $("#cfg-concurrency").val(concurrencyLimit);
     }
 };
@@ -141,7 +129,7 @@ function deleteToken(i) { tokensDB.splice(i, 1); localStorage.setItem('nosify_dm
 function clearAllTokens() { if(confirm("Clear all tokens?")) { tokensDB = []; localStorage.setItem('nosify_dm_tokens', '[]'); renderTokens(); }}
 
 async function checkAllTokens() {
-    for (let i = 0; i < tokensDB.length; i++) { await checkToken(i, true); await new Promise(r => setTimeout(r, 200)); }
+    for (let i = 0; i < tokensDB.length; i++) { await checkToken(i, true); await backgroundSafeSleep(200); }
     localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB)); renderTokens();
 }
 
@@ -213,7 +201,7 @@ async function saveBotProfile() {
     if (newName) payload.username = newName;
     if (newAvatarUrl) {
         let base64Img = await getBase64FromUrl(newAvatarUrl);
-        if (base64Img) payload.avatar = base64Img; else alert("Image conversion failed. Proceeding with name only.");
+        if (base64Img) payload.avatar = base64Img; else alert("Image conversion failed.");
     }
 
     let botsToEdit = isMassEditing ? tokensDB.filter(t => t.status.includes('Alive')) : [tokensDB[$("#edit-bot-index").val()]];
@@ -222,13 +210,13 @@ async function saveBotProfile() {
             let res = await discordProxy('https://discord.com/api/v10/users/@me', 'PATCH', b.token, payload);
             if(res.ok) { let data = await res.json(); b.name = data.username; }
         } catch(e) {}
-        if(isMassEditing) await new Promise(r => setTimeout(r, 1000));
+        if(isMassEditing) await backgroundSafeSleep(1000);
     }
     localStorage.setItem('nosify_dm_tokens', JSON.stringify(tokensDB)); renderTokens();
     btn.text("Push Changes to Discord").prop("disabled", false); closeBotEditor(); alert("Profile update(s) completed!");
 }
 
-// --- SERVERS & MEMORY MANGEMENT ---
+// --- SERVERS ---
 async function loadServersForGroup() {
     let group = $("#launch-token-group").val();
     if(!group) return $("#target-server").html('<option value="">Select a Bot Group First...</option>');
@@ -247,34 +235,6 @@ async function loadServersForGroup() {
             }
         } else $("#target-server").html('<option value="">Failed to fetch servers</option>');
     } catch(e) { $("#target-server").html('<option value="">Network error</option>'); }
-    
-    checkServerMemory();
-}
-
-function checkServerMemory() {
-    let sId = $("#target-server").val();
-    if (!sId) { $("#memory-controls").addClass("hidden"); $("#server-resume-badge").addClass("hidden"); return; }
-    
-    let mem = localStorage.getItem('nosify_dm_targets_' + sId);
-    if (mem) {
-        let parsed = JSON.parse(mem);
-        $("#memory-text").text(`Memory found: ${parsed.length} users remaining. Next launch will resume automatically.`);
-        $("#memory-controls").removeClass("hidden");
-        $("#server-resume-badge").removeClass("hidden");
-    } else {
-        $("#memory-controls").addClass("hidden");
-        $("#server-resume-badge").addClass("hidden");
-    }
-}
-
-function wipeServerMemory() {
-    let sId = $("#target-server").val();
-    if(!sId) return;
-    if(confirm("Wipe memory for this server? This means your next DMall will start from zero and scrape all members again.")) {
-        localStorage.removeItem('nosify_dm_targets_' + sId);
-        checkServerMemory();
-        logTerminalOutput(`Memory manually wiped for server ${sId}. Ready for fresh scrape.`, "info");
-    }
 }
 
 // --- EMBED BUILDER ---
@@ -285,9 +245,7 @@ function addEmbed() {
     embedsDB.push({ name: n, json: j }); localStorage.setItem('nosify_dm_embeds', JSON.stringify(embedsDB));
     $("#add-embed-name, #add-embed-json").val(""); renderEmbeds();
 }
-
 function deleteEmbed(i) { embedsDB.splice(i, 1); localStorage.setItem('nosify_dm_embeds', JSON.stringify(embedsDB)); renderEmbeds(); }
-
 function renderEmbeds() {
     let html = "", selHtml = "";
     embedsDB.forEach((e, i) => {
@@ -296,7 +254,6 @@ function renderEmbeds() {
     });
     $("#embed-list").html(html); $("#launch-embed").html(selHtml);
 }
-
 async function testWebhook() {
     let webhook = $("#test-webhook-url").val().trim(); let jStr = $("#add-embed-json").val().trim();
     if (!webhook || !jStr) return alert("Missing Webhook URL or JSON.");
@@ -307,7 +264,7 @@ async function testWebhook() {
     } catch(e) { alert("Invalid JSON format."); }
 }
 
-// --- FILTERS & SYSTEM MANAGEMENT ---
+// --- FILTERS & HISTORY LOGIC ---
 function addBlacklist() {
     let id = $("#add-blacklist-val").val().trim(); if (!id || blacklistDB.includes(id)) return;
     blacklistDB.push(id); localStorage.setItem('nosify_dm_blacklist', JSON.stringify(blacklistDB)); $("#add-blacklist-val").val(""); renderBlacklist();
@@ -322,19 +279,45 @@ function updateStats() {
     $("#stat-sent").text(statsDB.sent); $("#stat-failed").text(statsDB.failed); $("#stat-tokens").text(tokensDB.length); 
 }
 
-// --- LOGGING ENGINE ---
-function logTerminalOutput(msg, type="info") {
-    let color = type === "err" ? "#ef4444" : type === "win" ? "#10B981" : "#a1a1aa";
-    let formattedMsg = `<div style="color:${color}; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.05);">[${new Date().toLocaleTimeString()}] ${msg}</div>`;
-    terminalLogs.unshift(formattedMsg);
-    if(terminalLogs.length > 500) terminalLogs.pop(); // Keep 500 max
-    saveLogs();
+function addHistoryRecord(type, serverId, sent, failed, left) {
+    let record = {
+        type: type, 
+        time: new Date().toLocaleString(),
+        server: serverId, sent: sent, failed: failed, left: left
+    };
+    runHistory.unshift(record);
+    if(runHistory.length > 50) runHistory.pop(); 
+    localStorage.setItem('nosify_dm_history', JSON.stringify(runHistory));
+    renderHistory();
 }
-function saveLogs() { localStorage.setItem('nosify_dm_logs', JSON.stringify(terminalLogs)); loadLogs(); }
-function loadLogs() { $("#terminal-output").html(terminalLogs.join('')); }
-function clearTerminalLogs() { terminalLogs = ["Logs manually cleared by user."]; saveLogs(); }
 
-// --- THE SMART DMALL ENGINE ---
+function renderHistory() {
+    let html = '';
+    if (runHistory.length === 0) {
+        html = `<div class="text-gray-500 text-center mt-10 text-sm">No recent campaigns.</div>`;
+    } else {
+        runHistory.forEach(h => {
+            let borderCol = h.type === 'finished' ? 'border-green-500' : 'border-yellow-500';
+            let title = h.type === 'finished' ? '✅ Campaign Launched Offline' : '🛑 Kill Switch Activated';
+            html += `
+            <div class="glass-card mb-4 !p-4 border-l-4 ${borderCol} hover:bg-white/5 transition">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="font-bold text-white text-sm">${title}</span>
+                    <span class="text-xs text-gray-400">${h.time}</span>
+                </div>
+                <div class="text-xs text-gray-300 mb-2">Target Server: <span class="font-mono bg-black/30 px-2 py-0.5 rounded">${h.server}</span></div>
+                <div class="flex gap-4 text-xs font-bold bg-black/20 p-2 rounded-lg">
+                    <span class="text-gray-400">Status: Running in Background Engine</span>
+                </div>
+            </div>`;
+        });
+    }
+    $("#terminal-output").html(html).removeClass("h-[500px]").addClass("h-auto max-h-[500px] overflow-y-auto");
+}
+
+function clearTerminalLogs() { runHistory = []; localStorage.removeItem('nosify_dm_history'); renderHistory(); }
+
+// --- THE NEW HEADLESS LAUNCH ENGINE ---
 function promptDmall() {
     if ($("#auto-leave-toggle").is(":checked")) $("#leave-warning-modal").removeClass("hidden"); else executeDmall();
 }
@@ -342,191 +325,74 @@ function cancelDmall() { $("#leave-warning-modal").addClass("hidden"); }
 function confirmDmall() { $("#leave-warning-modal").addClass("hidden"); executeDmall(); }
 
 async function executeDmall() {
-    if(engineRunning) return alert("DMall is already running!");
+    if(engineRunning) return alert("A campaign is already processing offline!");
+    
     let group = $("#launch-token-group").val();
     let serverId = $("#target-server").val();
     let autoLeave = $("#auto-leave-toggle").is(":checked");
     let embedIdx = $("#launch-embed").val();
     let audience = $("#launch-audience").val();
+    let testId = $("#test-user-id").val();
     
     if(!group || !serverId || !embedIdx) return alert("Please fill all setup fields.");
-    
-    let bots = tokensDB.filter(t => t.group === group && t.status.includes('Alive'));
-    if(bots.length === 0) return alert("No active bots in folder!");
-    
+    if(audience === 'test' && !testId) return alert("Enter Test ID!");
+
+    let activeBots = tokensDB.filter(t => t.group === group && t.status.includes('Alive')).map(b => ({ token: b.token, fails: 0 }));
+    if(activeBots.length === 0) return alert("No active bots in folder!");
+
     let rawEmbedJson = embedsDB[embedIdx].json;
-    switchTab('tab-console'); switchConsoleView('live'); 
-    engineRunning = true; engineStop = false;
-    $("#dmall-status-text").text("Booting Campaign Sequence..."); 
-    
-    // UI RESET
-    let cSent = 0; let cFail = 0;
-    $("#con-sent").text("0"); $("#con-failed").text("0"); $("#con-left").text("0"); $("#con-percent").text("0%"); $("#con-progress").css("width", "0%");
 
-    // 1. STATE & SMART SCRAPING WITH RATE LIMIT AVOIDANCE
-    let targets = [];
-    if (audience === 'test') {
-        let testId = $("#test-user-id").val();
-        if(!testId) { engineRunning = false; return alert("Enter Test ID!"); }
-        targets = [testId]; totalCampaignTargets = 1;
-        $("#con-scraped").text("1"); $("#con-left").text("1");
-        logTerminalOutput(`Running TEST MODE on ID ${targets[0]}`, "info");
-    } else {
-        let memKey = 'nosify_dm_targets_' + serverId;
-        let savedTargets = JSON.parse(localStorage.getItem(memKey));
+    let launchOrder = {
+        status: "active",
+        serverId: serverId,
+        bots: activeBots,
+        embedJson: rawEmbedJson,
+        audience: audience,
+        testId: testId,
+        autoLeave: autoLeave,
+        concurrency: concurrencyLimit,
+        delay: dmDelay,
+        blacklist: blacklistDB
+    };
+
+    switchTab('tab-console'); 
+    switchConsoleView('live');
+    $("#dmall-status-text").text("Pushing to 24/7 Node.js Engine...");
+    $("#con-sent").text("OFFLINE"); $("#con-failed").text("OFFLINE"); $("#con-left").text("OFFLINE"); $("#con-percent").text("---"); 
+
+    try {
+        await fetch('/api/app', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'launch_campaign', data: launchOrder })
+        });
         
-        if (savedTargets && savedTargets.length > 0) {
-            targets = savedTargets;
-            totalCampaignTargets = targets.length; // Approximate total remaining as the total
-            $("#con-scraped").text(targets.length); $("#con-left").text(targets.length);
-            logTerminalOutput(`Resuming campaign. Loaded ${targets.length} targets from memory.`, "info");
-        } else {
-            $("#dmall-status-text").text("Scraping Server Members..."); 
-            logTerminalOutput(`Scraping all members from Server ${serverId}. Please wait...`, "info");
-            
-            let lastId = "0"; let fetchLoop = true; let useBot = bots[0].token; let retryCount = 0;
-            
-            while(fetchLoop && !engineStop) {
-                try {
-                    let res = await discordProxy(`https://discord.com/api/v10/guilds/${serverId}/members?limit=1000&after=${lastId}`, 'GET', useBot);
-                    
-                    // Handle Hard Rate Limits (The 6k bug fix)
-                    if (res.status === 429) {
-                        let rateData = await res.json();
-                        let waitMs = (rateData.retry_after * 1000) || 2500;
-                        logTerminalOutput(`Hit Discord Scraping Rate Limit! Cooling down for ${Math.ceil(waitMs/1000)} seconds...`, "err");
-                        await backgroundSafeSleep(waitMs);
-                        continue; // Re-run the loop with the same lastId
-                    }
-
-                    if(res.ok) {
-                        retryCount = 0; // reset retry
-                        let members = await res.json();
-                        if(members.length === 0) { fetchLoop = false; }
-                        else {
-                            let validIds = members.filter(m => !m.user.bot).map(m => m.user.id);
-                            targets.push(...validIds);
-                            lastId = members[members.length - 1].user.id;
-                            $("#con-scraped").text(targets.length);
-                            logTerminalOutput(`Fetched chunk: +${validIds.length} humans (Total: ${targets.length})`, "info");
-                            if(members.length < 1000) fetchLoop = false; // Reached the end
-                        }
-                    } else {
-                        retryCount++;
-                        logTerminalOutput(`Proxy Error ${res.status}. Retrying (${retryCount}/3)...`, "err");
-                        if(retryCount > 3) fetchLoop = false;
-                        await backgroundSafeSleep(2000);
-                    }
-                } catch(e) { 
-                    retryCount++; logTerminalOutput(`Network Error. Retrying...`, "err"); 
-                    if(retryCount > 3) fetchLoop = false; 
-                }
-                await backgroundSafeSleep(1000); // Natural padding
-            }
-            
-            // Clean Blacklist & Save
-            targets = targets.filter(id => !blacklistDB.includes(id));
-            localStorage.setItem(memKey, JSON.stringify(targets));
-            totalCampaignTargets = targets.length;
-            $("#con-scraped").text(targets.length); $("#con-left").text(targets.length);
-            logTerminalOutput(`Scraping complete. Final target list: ${targets.length} valid users.`, "win");
-        }
+        alert("✅ Campaign successfully pushed to the backend! You can safely close your browser or turn off your PC.");
+        $("#dmall-status-text").text("Engine Running Offline 24/7...");
+        engineRunning = true;
+        addHistoryRecord('finished', serverId, 'Offline', 'Offline', 'Offline');
+    } catch(e) {
+        alert("Failed to connect to the database.");
+        $("#dmall-status-text").text("Launch Failed.");
     }
-
-    if(targets.length === 0) {
-        $("#dmall-status-text").text("No targets found."); engineRunning = false; return;
-    }
-
-    $("#dmall-status-text").text("Firing Payloads..."); 
-    
-        // 2. SENDING DMs (REAL DISCORD API) - CONCURRENT CHUNKING
-    for(let i = 0; i < targets.length; i += concurrencyLimit) {
-        if(engineStop) {
-            localStorage.setItem('nosify_dm_targets_' + serverId, JSON.stringify(targets.slice(i)));
-            break;
-        }
-        
-        // Slice a chunk of targets based on your Concurrency Limit setting
-        let chunk = targets.slice(i, i + concurrencyLimit);
-        
-        // Fire the entire chunk simultaneously across all available bots
-        await Promise.all(chunk.map(async (targetId, chunkIdx) => {
-            let globalIdx = i + chunkIdx;
-            let botToken = bots[globalIdx % bots.length].token; // Rotates bots perfectly
-            
-            if (blacklistDB.includes(targetId)) return;
-            
-            let channelRes = await discordProxy('https://discord.com/api/v10/users/@me/channels', 'POST', botToken, { recipient_id: targetId });
-            
-            if (channelRes.ok) {
-                let channelData = await channelRes.json();
-                let finalPayloadStr = rawEmbedJson.replace(/{userid}/g, targetId).replace(/{usermention}/g, `<@${targetId}>`);
-                
-                let msgRes = await discordProxy(`https://discord.com/api/v10/channels/${channelData.id}/messages`, 'POST', botToken, JSON.parse(finalPayloadStr));
-                
-                // NO SPAM - JUST STATS
-                if (msgRes.ok) { 
-                    cSent++; statsDB.sent++; 
-                } else { 
-                    cFail++; statsDB.failed++; 
-                }
-            } else {
-                cFail++; statsDB.failed++; 
-            }
-        }));
-        
-        // Batch Update UI & Memory after the chunk finishes
-        $("#con-sent").text(cSent); $("#con-failed").text(cFail);
-        
-        let processedAmount = Math.min((i + concurrencyLimit), targets.length);
-        let remaining = targets.length - processedAmount;
-        $("#con-left").text(remaining);
-        
-        let pct = Math.floor((processedAmount / targets.length) * 100);
-        $("#con-progress").css("width", `${pct}%`); $("#con-percent").text(`${pct}%`);
-
-        localStorage.setItem('nosify_dm_stats', JSON.stringify(statsDB)); 
-        updateStats();
-        localStorage.setItem('nosify_dm_targets_' + serverId, JSON.stringify(targets.slice(processedAmount)));
-
-        // Wait the Delay setting between batches to avoid IP bans
-        await backgroundSafeSleep(dmDelay);
-    }
-
-
-    
-    if (!engineStop) {
-        $("#dmall-status-text").text("Campaign Complete.");
-        $("#con-left").text("0"); $("#con-progress").css("width", "100%"); $("#con-percent").text("100%");
-        logTerminalOutput(`✅ CAMPAIGN FINISHED | Target Server: ${serverId} | Successfully Sent: ${cSent} | Failed: ${cFail}`, "win");
-        localStorage.removeItem('nosify_dm_targets_' + serverId); // Wipe memory cleanly
-        checkServerMemory(); // Refresh the UI badge
-        
-        // 3. AUTO LEAVE SEQUENCE
-        if (autoLeave) {
-            $("#dmall-status-text").text("Auto-Leaving Server...");
-            logTerminalOutput(`Initiating Auto-Leave Protocol...`, "info");
-            for (let b = 0; b < bots.length; b++) {
-                await discordProxy(`https://discord.com/api/v10/users/@me/guilds/${serverId}`, 'DELETE', bots[b].token);
-                logTerminalOutput(`[Bot ${b+1}] 👋 Left server successfully.`, "win");
-                await backgroundSafeSleep(600);
-            }
-            $("#dmall-status-text").text("Auto-Leave Complete.");
-        }
-    }
-    
-    engineRunning = false;
 }
 
-function stopDmall() { 
-    if(!engineRunning) return;
-    engineStop = true; 
-    $("#dmall-status-text").text("System Paused.");
-    let cS = $("#con-sent").text(); let cF = $("#con-failed").text();
-    logTerminalOutput(`🛑 CAMPAIGN PAUSED | Sent: ${cS} | Failed: ${cF} | Progress safely saved to memory.`, "err"); 
-    checkServerMemory(); // Refresh UI badge
+async function stopDmall() { 
+    $("#dmall-status-text").text("Sending Kill Switch...");
+    try {
+        await fetch('/api/app', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'kill_campaign' })
+        });
+        alert("🛑 Kill switch sent! The backend engine will halt on its next chunk.");
+        engineRunning = false;
+        $("#dmall-status-text").text("Engine Halted.");
+        addHistoryRecord('paused', $("#target-server").val() || "Unknown", "Offline", "Offline", "Offline");
+    } catch(e) {
+        alert("Failed to send kill switch.");
+    }
 }
-
 
 // --- ADMIN PANEL API ---
 async function adminAction(action, payload) {
@@ -561,4 +427,4 @@ async function loadAdminSpyData() {
     let res = await fetch('/api/admin?spy=true', { headers: { 'Authorization': adminPass }});
     let data = await res.json(); $("#spy-content").text(JSON.stringify(data, null, 2));
         }
-            
+    
