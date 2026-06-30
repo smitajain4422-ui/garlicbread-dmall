@@ -121,12 +121,12 @@
                         <div>
                             <label class="text-xs font-bold text-[var(--site-text-muted)] uppercase block mb-2 tracking-wide">4. Target Audience</label>
                             <select id="launch-audience" class="input-box">
-                                <option value="test">Test Message (Single User)</option>
-                                <option value="online">Online / Idle / DND Only</option>
                                 <option value="all">All Server Members</option>
+                                <option value="online">Online / Idle / DND Only</option>
+                                <option value="test">Test Message (Single User)</option>
                             </select>
                         </div>
-                        <div id="test-id-box">
+                        <div id="test-id-box" class="hidden">
                             <label class="text-xs font-bold text-pink-500 uppercase block mb-2 tracking-wide">Enter Test User ID</label>
                             <input type="text" id="test-user-id" class="input-box" placeholder="Your Discord ID">
                         </div>
@@ -172,7 +172,7 @@
                         <p class="text-[var(--site-text-muted)] text-sm">Manage bots, embeds, delays, and blacklists.</p>
                     </div>
                     <div class="flex gap-3">
-                        <button onclick="clearSentHistory()" class="btn-red bg-red-500/10 border-red-500/50 hover:bg-red-500/20 px-4 py-2">Reset Logs</button>
+                        <button onclick="clearSystemData()" class="btn-red bg-red-500/10 border-red-500/50 hover:bg-red-500/20 px-4 py-2">Hard Reset System</button>
                     </div>
                 </div>
 
@@ -186,8 +186,9 @@
                                     <input type="text" id="add-token-group" class="input-box w-1/2" placeholder="Folder Name">
                                     <button onclick="addToken()" class="btn-blue flex-1">Add Tokens</button>
                                 </div>
-                                <div class="flex gap-2 pt-2">
+                                <div class="flex gap-2 pt-2 flex-wrap">
                                     <button onclick="checkAllTokens()" class="btn-dark text-xs flex-1 bg-green-500/10 border-green-500/30 text-green-400 hover:bg-green-500/20">Check All Bots</button>
+                                    <button onclick="copyAllInvites()" class="btn-dark text-xs flex-1 bg-blue-500/10 border-blue-500/30 text-blue-400 hover:bg-blue-500/20">Copy All Invites</button>
                                     <button onclick="openMassBotEditor()" class="btn-dark text-xs flex-1 bg-indigo-500/10 border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/20">Mass Edit Profiles</button>
                                     <button onclick="clearAllTokens()" class="btn-dark text-xs flex-1 bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20">Clear All Bots</button>
                                 </div>
@@ -229,6 +230,14 @@
                             <button onclick="addEmbed()" class="w-full btn-blue">Save Embed to Database</button>
                             <div class="overflow-y-auto max-h-32 border border-[var(--site-border)] rounded-xl bg-[var(--site-input)] p-2 mt-4" id="embed-list"></div>
                         </div>
+                        <div class="glass-card space-y-4">
+                            <h3 class="text-base font-bold text-red-400">Blacklist Users</h3>
+                            <div class="flex gap-3">
+                                <input type="text" id="add-blacklist-val" class="input-box" placeholder="Paste User ID to skip...">
+                                <button onclick="addBlacklist()" class="btn-blue bg-red-500 hover:bg-red-600 shadow-red-500/30">Block</button>
+                            </div>
+                            <div class="overflow-y-auto max-h-28 border border-[var(--site-border)] rounded-xl bg-[var(--site-input)] p-2 text-xs" id="blacklist-list"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -237,44 +246,51 @@
                 <div class="flex justify-between items-center flex-wrap gap-4">
                     <div>
                         <h2 class="text-3xl font-bold gradient-text mb-2">Execution Logs</h2>
-                        <p class="text-[var(--site-text-muted)] text-sm">Real-time status of your active campaign.</p>
+                        <p class="text-[var(--site-text-muted)] text-sm" id="dmall-status-text">Ready to launch.</p>
                     </div>
-                    <button onclick="stopDmall()" class="btn-red bg-red-500 hover:bg-red-600 text-white border-none px-6 py-3 font-bold shadow-lg shadow-red-500/30 text-sm">STOP DMALL</button>
+                    <div class="flex gap-3">
+                        <button onclick="clearTerminalLogs()" class="btn-dark text-xs px-4">Clear Logs</button>
+                        <button onclick="stopDmall()" class="btn-red bg-red-500 hover:bg-red-600 text-white border-none px-6 py-3 font-bold shadow-lg shadow-red-500/30 text-sm">STOP DMALL</button>
+                    </div>
                 </div>
                 
                 <div class="grid grid-cols-3 gap-4 text-center">
-                    <div class="glass-card !p-4"><span class="text-xs text-[var(--site-text-muted)] uppercase tracking-wider font-bold">Sent</span><br><span id="con-sent" class="text-2xl font-bold text-green-500 mt-1 block">0</span></div>
-                    <div class="glass-card !p-4"><span class="text-xs text-[var(--site-text-muted)] uppercase tracking-wider font-bold">Failed</span><br><span id="con-failed" class="text-2xl font-bold text-red-500 mt-1 block">0</span></div>
-                    <div class="glass-card !p-4"><span class="text-xs text-[var(--site-text-muted)] uppercase tracking-wider font-bold">Active Bots</span><br><span id="con-bots" class="text-2xl font-bold text-indigo-500 mt-1 block">0</span></div>
+                    <div class="glass-card !p-4"><span class="text-xs text-[var(--site-text-muted)] uppercase tracking-wider font-bold">Total Scraped</span><br><span id="con-scraped" class="text-2xl font-bold text-white mt-1 block">0</span></div>
+                    <div class="glass-card !p-4"><span class="text-xs text-[var(--site-text-muted)] uppercase tracking-wider font-bold">Successfully Sent</span><br><span id="con-sent" class="text-2xl font-bold text-green-500 mt-1 block">0</span></div>
+                    <div class="glass-card !p-4"><span class="text-xs text-[var(--site-text-muted)] uppercase tracking-wider font-bold">Failed (403)</span><br><span id="con-failed" class="text-2xl font-bold text-red-500 mt-1 block">0</span></div>
                 </div>
                 
                 <div class="progress-bg"><div class="progress-fill" id="con-progress"></div></div>
-                <div class="console-log shadow-inner" id="terminal-output">Waiting to start...</div>
+                <div class="console-log shadow-inner" id="terminal-output">System Booted. Persistent logs active.</div>
             </div>
 
-            <div id="tab-tutorial" class="tab-content space-y-6">
+                        <div id="tab-tutorial" class="tab-content space-y-6">
                 <div>
                     <h2 class="text-3xl font-bold gradient-text mb-2">Comprehensive Guide</h2>
                     <p class="text-[var(--site-text-muted)] text-sm">Mastering the Nosify DMall Engine.</p>
                 </div>
                 <div class="glass-card space-y-6 max-w-4xl text-sm leading-relaxed text-gray-300">
                     <div>
-                        <h3 class="text-lg font-bold text-indigo-400 border-b border-[var(--site-border)] pb-2 mb-2">1. Tokens & Invite Links</h3>
-                        <p>Paste tokens (single, lists, or JSON arrays) into the Config tab. Click <strong>Check All Bots</strong>. The system will securely verify them via our private proxy (bypassing CORS). <br>If a bot is verified as "Alive", a green <strong>Invite</strong> button will appear next to it. Clicking this automatically generates an Admin invite link so you can pull the bot into your target server.</p>
+                        <h3 class="text-lg font-bold text-indigo-400 border-b border-[var(--site-border)] pb-2 mb-2">1. The "10-Second Limitation"</h3>
+                        <p>Because this site runs on free cloud servers, <strong>you cannot close your browser tab</strong> while DMing. If you close the tab, it will stop. However, we save your exact progress to your computer! If you accidentally close it, just open the site again, click Start, and it will skip everyone it already messaged.</p>
                     </div>
                     <div>
-                        <h3 class="text-lg font-bold text-pink-400 border-b border-[var(--site-border)] pb-2 mb-2">2. Mass Editing Profiles</h3>
-                                          <p>Instead of editing bots one by one, click <strong>Mass Edit Profiles</strong>. This will change the Username and Avatar for *every active bot* in your database instantly, saving you tons of time when setting up a new campaign.</p>
+                        <h3 class="text-lg font-bold text-indigo-400 border-b border-[var(--site-border)] pb-2 mb-2">2. Tokens & Invite Links</h3>
+                        <p>Paste tokens (single, lists, or JSON arrays) into the Config tab. Click <strong>Check All Bots</strong>. The system will securely verify them. Click <strong>Copy All Invites</strong> to instantly copy Admin invite links for every working bot you have so you can add them to your target server.</p>
                     </div>
                     <div>
-                        <h3 class="text-lg font-bold text-yellow-400 border-b border-[var(--site-border)] pb-2 mb-2">3. Embed Variables (Mentions & IDs)</h3>
+                        <h3 class="text-lg font-bold text-pink-400 border-b border-[var(--site-border)] pb-2 mb-2">3. Mass Editing Profiles</h3>
+                        <p>Instead of editing bots one by one, click <strong>Mass Edit Profiles</strong>. This will change the Username and Avatar for *every active bot* in your database instantly, saving you tons of time when setting up a new campaign.</p>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-yellow-400 border-b border-[var(--site-border)] pb-2 mb-2">4. Embed Variables (Mentions & IDs)</h3>
                         <p>You can personalize your DMs automatically. Inside your raw JSON in the Embed Builder, you can type:<br>
                         - <code>{userid}</code> : This will be replaced by the target's raw Discord ID.<br>
                         - <code>{usermention}</code> : This will be replaced by an actual ping/mention (e.g. @Spencer) in the user's DM.<br>
                         <em>Example:</em> "Hey {usermention}, you won!"</p>
                     </div>
                     <div>
-                        <h3 class="text-lg font-bold text-green-400 border-b border-[var(--site-border)] pb-2 mb-2">4. Auto-Leave Servers</h3>
+                        <h3 class="text-lg font-bold text-green-400 border-b border-[var(--site-border)] pb-2 mb-2">5. Auto-Leave Servers</h3>
                         <p>In the Start tab, turn on the <strong>Auto-Leave</strong> toggle. Once your mass DM finishes, all of your bots will automatically delete themselves from the target server so admins cannot track them down and report them to Discord Trust & Safety.</p>
                     </div>
                 </div>
